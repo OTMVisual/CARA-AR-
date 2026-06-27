@@ -218,7 +218,7 @@ body{
 /* Top bar */
 .topbar{
   display:flex;align-items:center;justify-content:space-between;
-  padding:52px 16px 12px;
+  padding:52px 60px 12px 16px;
   background:linear-gradient(to bottom,rgba(0,0,0,0.65) 0%,transparent 100%);
   pointer-events:auto;
 }
@@ -536,19 +536,22 @@ body{
 }
 #ui .topbar,#ui #status-pill,#ui #bottom-sheet,#ui #no-vrm{transition:opacity 0.4s ease;}
 
-/* The hide-UI eye button — lives in the top bar, but when UI is hidden it
-   floats in the same top-right spot at low opacity so you can always tap it. */
-#btn-hide-ui{position:relative;z-index:50;transition:opacity 0.4s ease;}
-
-/* When UI is hidden: keep ONLY this button visible, pinned & semi-transparent */
-#ui.ui-hidden #btn-hide-ui{
+/* The hide-UI eye button — fixed in the top-right corner in BOTH states.
+   When UI hides, only this stays (semi-transparent) so you can tap it back. */
+#btn-hide-ui{
   position:fixed;
   top:54px;right:16px;
-  opacity:0.35;            /* transparent in hide mode */
-  pointer-events:auto;     /* still tappable */
-  z-index:200;
+  z-index:210;
+  transition:opacity 0.35s ease;
+  opacity:1;
+  pointer-events:auto;   /* must be set — parent #ui has pointer-events:none */
 }
-#ui.ui-hidden #btn-hide-ui:active{opacity:0.7;}
+/* When UI is hidden: dim it so the screen is clean, but keep it tappable */
+#ui.ui-hidden #btn-hide-ui{
+  opacity:0.32;
+  pointer-events:auto;
+}
+#ui.ui-hidden #btn-hide-ui:active{opacity:0.75;}
 </style>
 </head>
 <body>
@@ -731,6 +734,7 @@ body{
           <button class="ttab active" data-tab="vrm">VRM</button>
           <button class="ttab" data-tab="light">Light</button>
           <button class="ttab" data-tab="tracking">Track</button>
+          <button class="ttab" data-tab="offset">Offset</button>
           <button class="ttab" data-tab="camera">Camera</button>
         </div>
 
@@ -793,14 +797,12 @@ body{
         <!-- Tracking panel -->
         <div class="tpanel" id="tp-tracking">
           <div class="sl-section">
-            <div class="sl-label">Avatar Position</div>
-            <div class="sl-row"><span class="sl-name">Head Size</span><input type="range" id="sl-scale" min="0.5" max="3" step="0.05" value="1.4"><span class="sl-val" id="vl-scale">1.40</span></div>
-            <div class="sl-row"><span class="sl-name">Up / Down</span><input type="range" id="sl-offsety" min="-2" max="2" step="0.05" value="0.1"><span class="sl-val" id="vl-offsety">0.10</span></div>
-            <div class="sl-row"><span class="sl-name">Depth</span><input type="range" id="sl-depth" min="-3" max="0" step="0.05" value="-0.5"><span class="sl-val" id="vl-depth">-0.50</span></div>
-            <div class="sl-row"><span class="sl-name">Rotate</span><input type="range" id="sl-rot" min="0" max="360" step="1" value="0"><span class="sl-val" id="vl-rot">0°</span></div>
+            <div class="sl-label">Avatar Rotation</div>
+            <div class="sl-row"><span class="sl-name">Spin (Y)</span><input type="range" id="sl-rot" min="0" max="360" step="1" value="180"><span class="sl-val" id="vl-rot">180°</span></div>
+            <div class="sl-row"><span class="sl-name">Tilt (X)</span><input type="range" id="sl-tilt" min="0" max="360" step="1" value="0"><span class="sl-val" id="vl-tilt">0°</span></div>
             <button class="btn-secondary" id="btn-face-viewer" style="margin-top:4px;">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5" fill="currentColor" stroke="none"/></svg>
-              Face the Viewer
+              Face the Viewer (Reset)
             </button>
           </div>
           <div class="sl-section">
@@ -808,6 +810,29 @@ body{
             <div class="sl-row"><span class="sl-name">Sensitivity</span><input type="range" id="sl-sens" min="0.3" max="2.5" step="0.05" value="1.2"><span class="sl-val" id="vl-sens">1.20</span></div>
             <div class="sl-row"><span class="sl-name">Smoothing</span><input type="range" id="sl-smooth" min="0.05" max="0.95" step="0.05" value="0.4"><span class="sl-val" id="vl-smooth">0.40</span></div>
           </div>
+        </div>
+
+        <!-- Offset panel -->
+        <div class="tpanel" id="tp-offset">
+          <div class="toggle-row" style="margin-bottom:6px;">
+            <div><div class="toggle-label">Lock Character in Place</div><div class="toggle-sub">Freeze position &amp; rotation (stop face tracking the avatar)</div></div>
+            <button class="toggle-sw" id="tog-lock"></button>
+          </div>
+          <div class="sl-section">
+            <div class="sl-label">Position Offset</div>
+            <div class="sl-row"><span class="sl-name">Height</span><input type="range" id="sl-off-h" min="-2" max="2" step="0.02" value="0.1"><span class="sl-val" id="vl-off-h">0.10</span></div>
+            <div class="sl-row"><span class="sl-name">Depth</span><input type="range" id="sl-off-d" min="-3" max="1" step="0.02" value="-0.5"><span class="sl-val" id="vl-off-d">-0.50</span></div>
+            <div class="sl-row"><span class="sl-name">Side</span><input type="range" id="sl-off-x" min="-2" max="2" step="0.02" value="0"><span class="sl-val" id="vl-off-x">0.00</span></div>
+          </div>
+          <div class="sl-section">
+            <div class="sl-label">Angle &amp; Scale Offset</div>
+            <div class="sl-row"><span class="sl-name">Angle</span><input type="range" id="sl-off-a" min="0" max="360" step="1" value="180"><span class="sl-val" id="vl-off-a">180°</span></div>
+            <div class="sl-row"><span class="sl-name">Scale</span><input type="range" id="sl-off-s" min="0.3" max="3.5" step="0.02" value="1.4"><span class="sl-val" id="vl-off-s">1.40</span></div>
+          </div>
+          <button class="btn-secondary" id="btn-reset-offset">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10a6 6 0 1012-3.5M4 4v4h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Reset All Offsets
+          </button>
         </div>
 
         <!-- Camera panel -->
@@ -934,8 +959,8 @@ body{
         <div class="guide-step">
           <div class="guide-num">10</div>
           <div class="guide-step-body">
-            <div class="guide-step-title">Rotate Your Avatar</div>
-            <div class="guide-step-desc">Open Controls → Track and use the Rotate slider to spin your avatar a full 360°. By default it faces you so viewers see your expressions. Tap "Face the Viewer" anytime to snap it straight back to facing the camera.</div>
+            <div class="guide-step-title">Rotate &amp; Offset Your Avatar</div>
+            <div class="guide-step-desc">In Controls → Track you get two rotation sliders: Spin (Y) turns your avatar left/right a full 360°, and Tilt (X) rolls it forward/back. It faces you by default (180°). Tap "Face the Viewer" to reset. For finer control, the new Offset tab has Height, Depth, Side, Angle and Scale offsets, plus a "Lock Character in Place" toggle that freezes the avatar so it stops following your face — handy for setting up a fixed shot.</div>
           </div>
         </div>
         <div class="guide-step">
@@ -997,9 +1022,12 @@ let avatarVisible = true, bgVisible = true, neckEnabled = false;
 let trayOpen = false;
 let cameraActive = false;
 let smoothX=0,smoothY=0,smoothRX=0,smoothRY=0,smoothRZ=0;
-let userRotY=0; // base avatar facing — 0 = face the viewer (verified by geometry test)
+let userRotY=Math.PI; // base avatar facing — 180° = face the viewer (confirmed on device)
+let userTiltX=0;       // base tilt (X rotation) offset in radians
+let lockPose=false;    // when true, freeze the avatar (ignore face tracking)
+let lockedState=null;  // captured pose when locking
 
-const S = { scale:1.4, offsetY:0.1, depth:-0.5, sensitivity:1.2, smooth:0.4 };
+const S = { scale:1.4, offsetY:0.1, offsetX:0, depth:-0.5, sensitivity:1.2, smooth:0.4 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function setLoad(pct,msg){
@@ -1344,19 +1372,31 @@ function onFaceResults(results){
   drawFaceMesh(L);
   const sens=S.sensitivity,sm=S.smooth;
 
-  // Head position
+  // ── Head position — use face center (between eyes) for stability ───────
   const nose=L[4],fore=L[10],chin=L[152];
   const eyeL=L[33],eyeR=L[263];
-  const cx=nose.x-0.5,cy=-(nose.y-0.5);
-  smoothX+=(cx*4-smoothX)*(1-sm);
-  smoothY+=(cy*4+S.offsetY-smoothY)*(1-sm);
+  const faceCx=(eyeL.x+eyeR.x)/2;            // horizontal face center
+  const faceCy=(fore.y+chin.y)/2;            // vertical face center
+  // Face width (eye-to-eye) tells us distance → use it to scale movement
+  const faceW=Math.max(1e-4,dist3(eyeL,eyeR));
+  // Map normalized image coords (0..1) to scene units. *4 spans the view.
+  const cx=(faceCx-0.5);
+  const cy=-(faceCy-0.5);
+  // Position gain scales a little with closeness so near/far both track well
+  const posGain=4.2;
+  smoothX+=((cx*posGain)+S.offsetX*0 - smoothX)*(1-sm); // offsetX applied in loop
+  smoothY+=((cy*posGain)+S.offsetY - smoothY)*(1-sm);
 
-  // Head rotation
-  const yaw=(nose.x-(eyeL.x+eyeR.x)/2)*6*sens;
-  const pitch=((nose.y-(eyeL.y+eyeR.y)/2)/dist3(fore,chin)-0.5)*3*sens;
-  const roll=-(eyeR.y-eyeL.y)*8*sens;
+  // ── Head rotation — yaw/pitch/roll from facial geometry ───────────────
+  // Yaw: nose horizontal offset from face center, normalized by face width
+  const yaw=((nose.x-faceCx)/faceW)*2.4*sens;
+  // Pitch: nose vertical position between brow and chin
+  const facH=Math.max(1e-4,dist3(fore,chin));
+  const pitch=(((nose.y-faceCy)/facH))*2.6*sens;
+  // Roll: eye line tilt
+  const roll=Math.atan2(eyeR.y-eyeL.y, eyeR.x-eyeL.x)*1.1*sens;
   smoothRY+=(-yaw-smoothRY)*(1-sm);
-  smoothRX+=(-pitch-smoothRX)*(1-sm);
+  smoothRX+=(pitch-smoothRX)*(1-sm);
   smoothRZ+=(roll-smoothRZ)*(1-sm);
 
   // ── Blink ────────────────────────────────────────────────────────────
@@ -1397,21 +1437,38 @@ function onFaceResults(results){
   const browDnL=Math.min(1,Math.max(0,(L[70].y-L[159].y+0.01)*12*sens));
   const browDnR=Math.min(1,Math.max(0,(L[300].y-L[386].y+0.01)*12*sens));
 
-  // ── Eye look direction (refined landmarks) ────────────────────────────
+  // ── Eye look direction — iris position normalized within each eye ──────
+  // MediaPipe refined landmarks: left iris center = 468, right iris = 473.
+  // For each eye we measure the iris relative to that eye's own corners and
+  // lids, so the value is a true 0..1 gaze ratio regardless of head size.
   let eyeUpL=0,eyeDnL=0,eyeInL=0,eyeOutL=0;
   let eyeUpR=0,eyeDnR=0,eyeInR=0,eyeOutR=0;
-  if(L[468]){ // iris landmarks available with refineLandmarks:true
-    const iris=L[468]; // left iris center
-    const irisR=L[473]; // right iris center
-    const lEyeC={x:(L[33].x+L[263].x)/2,y:(L[159].y+L[145].y)/2};
-    eyeUpL=Math.max(0,(lEyeC.y-iris.y)*12);
-    eyeDnL=Math.max(0,(iris.y-lEyeC.y)*12);
-    eyeInL=Math.max(0,(iris.x-lEyeC.x)*10);
-    eyeOutL=Math.max(0,(lEyeC.x-iris.x)*10);
-    eyeUpR=Math.max(0,(lEyeC.y-irisR.y)*12);
-    eyeDnR=Math.max(0,(irisR.y-lEyeC.y)*12);
-    eyeInR=Math.max(0,(lEyeC.x-irisR.x)*10);
-    eyeOutR=Math.max(0,(irisR.x-lEyeC.x)*10);
+  if(L[468]&&L[473]){
+    // LEFT eye (subject's left = image right): corners 33(outer) & 133(inner), lids 159(top) 145(bottom)
+    const Lout=L[33], Lin=L[133], Ltop=L[159], Lbot=L[145];
+    const lIris=L[468];
+    const lcx=(Lout.x+Lin.x)/2, lcy=(Ltop.y+Lbot.y)/2;
+    const lhw=Math.max(1e-4,Math.abs(Lin.x-Lout.x)/2);   // half width
+    const lhh=Math.max(1e-4,Math.abs(Lbot.y-Ltop.y)/2);  // half height
+    const lnx=(lIris.x-lcx)/lhw;   // -1 (outer) .. +1 (inner)  [image space]
+    const lny=(lIris.y-lcy)/lhh;   // -1 (up) .. +1 (down)
+    eyeUpL  =Math.min(1,Math.max(0,-lny));
+    eyeDnL  =Math.min(1,Math.max(0, lny));
+    eyeInL  =Math.min(1,Math.max(0, lnx));  // toward nose
+    eyeOutL =Math.min(1,Math.max(0,-lnx));  // toward ear
+
+    // RIGHT eye: corners 263(outer) & 362(inner), lids 386(top) 374(bottom)
+    const Rout=L[263], Rin=L[362], Rtop=L[386], Rbot=L[374];
+    const rIris=L[473];
+    const rcx=(Rout.x+Rin.x)/2, rcy=(Rtop.y+Rbot.y)/2;
+    const rhw=Math.max(1e-4,Math.abs(Rin.x-Rout.x)/2);
+    const rhh=Math.max(1e-4,Math.abs(Rbot.y-Rtop.y)/2);
+    const rnx=(rIris.x-rcx)/rhw;
+    const rny=(rIris.y-rcy)/rhh;
+    eyeUpR  =Math.min(1,Math.max(0,-rny));
+    eyeDnR  =Math.min(1,Math.max(0, rny));
+    eyeInR  =Math.min(1,Math.max(0,-rnx)); // inner for right eye is -x
+    eyeOutR =Math.min(1,Math.max(0, rnx));
   }
 
   // ── Richer expression derivations ──────────────────────────────────────
@@ -1488,9 +1545,17 @@ function loop(){
   const delta=Math.min(0.05,(now-_clock)/1000); _clock=now;
   if(currentVRM&&avatarVisible){
     const vs=currentVRM.scene;
-    vs.position.set(smoothX,smoothY,S.depth);
-    vs.rotation.set(smoothRX, smoothRY + userRotY, smoothRZ); // userRotY = base facing
-    vs.scale.setScalar(S.scale);
+    if(lockPose && lockedState){
+      // Frozen pose — ignore live tracking, hold the captured transform
+      vs.position.set(lockedState.px, lockedState.py, lockedState.pz);
+      vs.rotation.set(lockedState.rx, lockedState.ry, lockedState.rz);
+      vs.scale.setScalar(lockedState.s);
+    }else{
+      // Live tracking + user offsets
+      vs.position.set(smoothX + S.offsetX, smoothY, S.depth);
+      vs.rotation.set(smoothRX + userTiltX, smoothRY + userRotY, smoothRZ);
+      vs.scale.setScalar(S.scale);
+    }
     vs.visible=true;
     if(currentVRM.isVRM&&currentVRM.vrm&&currentVRM.vrm.update){
       try{ currentVRM.vrm.update(delta); }catch(e){}
@@ -1817,11 +1882,8 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   document.getElementById('col-fill').addEventListener('input',e=>fillLight.color.set(e.target.value));
   document.getElementById('col-rim').addEventListener('input',e=>rimLight.color.set(e.target.value));
 
-  // ── Tracking sliders ──
+  // ── Tracking-feel sliders ──
   [
-    ['sl-scale','vl-scale','scale'],
-    ['sl-offsety','vl-offsety','offsetY'],
-    ['sl-depth','vl-depth','depth'],
     ['sl-sens','vl-sens','sensitivity'],
     ['sl-smooth','vl-smooth','smooth'],
   ].forEach(([sid,vid,key])=>{
@@ -1832,18 +1894,80 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     });
   });
 
-  // ── Rotate slider (0–360°) — sets base avatar facing ──
+  // ── Spin (Y rotation) 0–360° ──
   document.getElementById('sl-rot').addEventListener('input',e=>{
     const deg=parseFloat(e.target.value);
     userRotY=deg*Math.PI/180;
     document.getElementById('vl-rot').textContent=Math.round(deg)+'°';
+    // keep the Offset-tab Angle slider in sync
+    const a=document.getElementById('sl-off-a'); if(a){a.value=deg;document.getElementById('vl-off-a').textContent=Math.round(deg)+'°';}
   });
-  // ── Face the Viewer — snap back to facing the camera ──
+  // ── Tilt (X rotation) 0–360° ──
+  document.getElementById('sl-tilt').addEventListener('input',e=>{
+    const deg=parseFloat(e.target.value);
+    userTiltX=deg*Math.PI/180;
+    document.getElementById('vl-tilt').textContent=Math.round(deg)+'°';
+  });
+  // ── Face the Viewer — reset spin to 180° (faces camera) and tilt to 0 ──
   document.getElementById('btn-face-viewer').addEventListener('click',()=>{
-    userRotY=0;
-    document.getElementById('sl-rot').value=0;
-    document.getElementById('vl-rot').textContent='0°';
+    userRotY=Math.PI; userTiltX=0;
+    document.getElementById('sl-rot').value=180;
+    document.getElementById('vl-rot').textContent='180°';
+    document.getElementById('sl-tilt').value=0;
+    document.getElementById('vl-tilt').textContent='0°';
+    const a=document.getElementById('sl-off-a'); if(a){a.value=180;document.getElementById('vl-off-a').textContent='180°';}
     toast('Avatar facing you',true);
+  });
+
+  // ── Offset tab sliders ──
+  document.getElementById('sl-off-h').addEventListener('input',e=>{
+    S.offsetY=parseFloat(e.target.value);
+    document.getElementById('vl-off-h').textContent=S.offsetY.toFixed(2);
+  });
+  document.getElementById('sl-off-d').addEventListener('input',e=>{
+    S.depth=parseFloat(e.target.value);
+    document.getElementById('vl-off-d').textContent=S.depth.toFixed(2);
+  });
+  document.getElementById('sl-off-x').addEventListener('input',e=>{
+    S.offsetX=parseFloat(e.target.value);
+    document.getElementById('vl-off-x').textContent=S.offsetX.toFixed(2);
+  });
+  document.getElementById('sl-off-a').addEventListener('input',e=>{
+    const deg=parseFloat(e.target.value);
+    userRotY=deg*Math.PI/180;
+    document.getElementById('vl-off-a').textContent=Math.round(deg)+'°';
+    const r=document.getElementById('sl-rot'); if(r){r.value=deg;document.getElementById('vl-rot').textContent=Math.round(deg)+'°';}
+  });
+  document.getElementById('sl-off-s').addEventListener('input',e=>{
+    S.scale=parseFloat(e.target.value);
+    document.getElementById('vl-off-s').textContent=S.scale.toFixed(2);
+  });
+  // Lock character in place
+  document.getElementById('tog-lock').addEventListener('click',()=>{
+    lockPose=!lockPose;
+    document.getElementById('tog-lock').classList.toggle('on',lockPose);
+    if(lockPose && currentVRM){
+      // Capture current live transform to freeze it
+      lockedState={
+        px:smoothX+S.offsetX, py:smoothY, pz:S.depth,
+        rx:smoothRX+userTiltX, ry:smoothRY+userRotY, rz:smoothRZ, s:S.scale
+      };
+      toast('Character locked in place',true);
+    }else{
+      lockedState=null;
+      toast('Character unlocked',true);
+    }
+  });
+  // Reset all offsets
+  document.getElementById('btn-reset-offset').addEventListener('click',()=>{
+    S.offsetY=0.1; S.depth=-0.5; S.offsetX=0; S.scale=1.4; userRotY=Math.PI; userTiltX=0;
+    lockPose=false; lockedState=null;
+    document.getElementById('tog-lock').classList.remove('on');
+    const set=(id,vid,val,suffix='')=>{const s=document.getElementById(id);if(s){s.value=val;document.getElementById(vid).textContent=(suffix?Math.round(val)+suffix:parseFloat(val).toFixed(2));}};
+    set('sl-off-h','vl-off-h',0.1); set('sl-off-d','vl-off-d',-0.5); set('sl-off-x','vl-off-x',0);
+    set('sl-off-a','vl-off-a',180,'°'); set('sl-off-s','vl-off-s',1.4);
+    set('sl-rot','vl-rot',180,'°'); set('sl-tilt','vl-tilt',0,'°');
+    toast('Offsets reset',true);
   });
 
   // ── Hide / Show UI — eye button (stays as a transparent eye when hidden) ──
