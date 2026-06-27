@@ -525,6 +525,28 @@ body{
 
 #file-input{display:none;}
 
+/* Touch gesture zone — drag to move avatar, pinch to scale.
+   Sits between the top bar and bottom sheet so it never blocks buttons. */
+#gesture-zone{
+  position:absolute;left:0;right:0;
+  top:150px;bottom:170px;
+  z-index:8;            /* above avatar canvas(1), below bottom-sheet(30)/topbar */
+  pointer-events:auto;
+  touch-action:none;   /* we handle all touch ourselves */
+}
+/* When UI hidden, let gestures still work full-screen-ish but keep hide btn on top */
+#ui.ui-hidden #gesture-zone{top:0;bottom:0;}
+
+/* Brief on-screen gesture hint */
+#gesture-hint{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:9;pointer-events:none;text-align:center;
+  font-size:12px;color:rgba(255,255,255,0.45);font-weight:600;
+  background:rgba(0,0,0,0.35);padding:8px 16px;border-radius:14px;
+  opacity:0;transition:opacity 0.3s;white-space:nowrap;
+}
+#gesture-hint.show{opacity:1;}
+
 /* ── Hide UI — floating eye toggle ─────────────────────────────────── */
 /* When hidden, fade out all interactive UI EXCEPT the hide-ui eye button */
 #ui.ui-hidden .topbar,
@@ -695,6 +717,10 @@ body{
       </div>
       <div class="nv-text">Tap Import VRM to load your avatar</div>
     </div>
+
+    <!-- Touch gesture zone: drag = move, pinch = scale -->
+    <div id="gesture-zone"></div>
+    <div id="gesture-hint"></div>
 
     <!-- Bottom sheet -->
     <div id="bottom-sheet">
@@ -917,8 +943,8 @@ body{
         <div class="guide-step">
           <div class="guide-num">4</div>
           <div class="guide-step-body">
-            <div class="guide-step-title">Adjust Avatar Position</div>
-            <div class="guide-step-desc">Open Controls → Track tab to adjust Head Size (scale), Up/Down position, and Depth. Use these sliders to align the avatar perfectly over your face. Sensitivity and Smoothing control how responsive and fluid the tracking feels.</div>
+            <div class="guide-step-title">Move &amp; Scale Your Avatar</div>
+            <div class="guide-step-desc">The easiest way: drag the avatar with one finger to move it, and pinch with two fingers to make it bigger or smaller — right on the screen. For precise control, the Offset tab has Height, Depth, Side, Angle and Scale sliders, plus a Lock toggle to freeze it in place. The Track tab has Sensitivity and Smoothing to tune how the tracking feels.</div>
           </div>
         </div>
         <div class="guide-step">
@@ -1023,6 +1049,7 @@ let trayOpen = false;
 let cameraActive = false;
 let smoothX=0,smoothY=0,smoothRX=0,smoothRY=0,smoothRZ=0;
 let userRotY=Math.PI; // base avatar facing — 180° = face the viewer (confirmed on device)
+let gazeYaw=0, gazePitch=0, gazeActive=false; // eye-bone lookAt gaze (degrees)
 let userTiltX=0;       // base tilt (X rotation) offset in radians
 let lockPose=false;    // when true, freeze the avatar (ignore face tracking)
 let lockedState=null;  // captured pose when locking
@@ -1469,6 +1496,24 @@ function onFaceResults(results){
     eyeDnR  =Math.min(1,Math.max(0, rny));
     eyeInR  =Math.min(1,Math.max(0,-rnx)); // inner for right eye is -x
     eyeOutR =Math.min(1,Math.max(0, rnx));
+
+    // ── Gaze for bone-based VRM lookAt (degrees) ────────────────────────
+    // Average both eyes' normalized iris offset → yaw/pitch the eye bones.
+    // Mirror is handled by negating yaw for the front camera.
+    const avgNX=((lnx)+(-rnx))/2;  // +nx = looking toward viewer's left
+    const avgNY=(lny+rny)/2;       // +ny = looking down
+    const GAZE_YAW=22, GAZE_PITCH=18; // max degrees
+    const mir=(currentFacing==='user');
+    let gy=avgNX*GAZE_YAW; if(mir) gy=-gy;
+    const gp=-avgNY*GAZE_PITCH;
+    // Smooth the gaze so it isn't jittery
+    gazeYaw  += (gy - gazeYaw) * (1-Math.min(0.85,sm));
+    gazePitch+= (gp - gazePitch) * (1-Math.min(0.85,sm));
+    gazeActive=true;
+  } else {
+    // No iris data — ease gaze back to center
+    gazeYaw  += (0 - gazeYaw) * 0.3;
+    gazePitch+= (0 - gazePitch) * 0.3;
   }
 
   // ── Richer expression derivations ──────────────────────────────────────
@@ -1559,6 +1604,12 @@ function loop(){
     vs.visible=true;
     if(currentVRM.isVRM&&currentVRM.vrm&&currentVRM.vrm.update){
       try{ currentVRM.vrm.update(delta); }catch(e){}
+      // Drive eye-bone gaze AFTER update() (update() resets it otherwise).
+      const la=currentVRM.vrm.lookAt;
+      if(la&&la.applier&&la.applier.applyYawPitch){
+        if(la.autoUpdate!==false) la.autoUpdate=false;
+        try{ la.applier.applyYawPitch(gazeYaw, gazePitch); }catch(e){}
+      }
     }
     updateNeckMask();
   } else if(currentVRM){
@@ -1969,6 +2020,93 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     set('sl-rot','vl-rot',180,'°'); set('sl-tilt','vl-tilt',0,'°');
     toast('Offsets reset',true);
   });
+
+  // ── Touch gestures: drag to move, pinch to scale ─────────────────────────
+  (function setupGestures(){
+    const zone=document.getElementById('gesture-zone');
+    const hint=document.getElementById('gesture-hint');
+    let mode=null;          // 'drag' | 'pinch'
+    let startX=0,startY=0;
+    let baseOffX=0,baseOffY=0;
+    let startDist=0,baseScale=1;
+    let hintTimer=null;
+
+    function showHint(txt){
+      hint.textContent=txt; hint.classList.add('show');
+      clearTimeout(hintTimer);
+      hintTimer=setTimeout(()=>hint.classList.remove('show'),900);
+    }
+    function dist(t1,t2){
+      const dx=t1.clientX-t2.clientX, dy=t1.clientY-t2.clientY;
+      return Math.hypot(dx,dy);
+    }
+    // Convert a screen-pixel delta to scene units (matches posGain≈4.2 across width)
+    const pxToSceneX=(dx)=> (dx/window.innerWidth)*4.2;
+    const pxToSceneY=(dy)=> -(dy/window.innerHeight)*4.2*(window.innerHeight/window.innerWidth);
+
+    function syncOffsetSliders(){
+      const setV=(id,vid,val,dec=2)=>{const s=document.getElementById(id);if(s){s.value=val;document.getElementById(vid).textContent=parseFloat(val).toFixed(dec);}};
+      setV('sl-off-x','vl-off-x',S.offsetX);
+      setV('sl-off-h','vl-off-h',S.offsetY);
+      setV('sl-off-s','vl-off-s',S.scale);
+    }
+
+    zone.addEventListener('touchstart',e=>{
+      if(!currentVRM) return;
+      if(e.touches.length===1){
+        mode='drag';
+        startX=e.touches[0].clientX; startY=e.touches[0].clientY;
+        baseOffX=S.offsetX; baseOffY=S.offsetY;
+      }else if(e.touches.length===2){
+        mode='pinch';
+        startDist=dist(e.touches[0],e.touches[1]);
+        baseScale=S.scale;
+      }
+    },{passive:true});
+
+    zone.addEventListener('touchmove',e=>{
+      if(!currentVRM||!mode) return;
+      if(mode==='drag'&&e.touches.length===1){
+        const dx=e.touches[0].clientX-startX;
+        const dy=e.touches[0].clientY-startY;
+        S.offsetX=baseOffX+pxToSceneX(dx);
+        S.offsetY=baseOffY+pxToSceneY(dy);
+        showHint('Move  X '+S.offsetX.toFixed(2)+'   Y '+S.offsetY.toFixed(2));
+        syncOffsetSliders();
+      }else if(mode==='pinch'&&e.touches.length===2){
+        const d=dist(e.touches[0],e.touches[1]);
+        const ratio=d/(startDist||d);
+        S.scale=Math.min(3.5,Math.max(0.3,baseScale*ratio));
+        showHint('Scale  '+S.scale.toFixed(2)+'×');
+        syncOffsetSliders();
+      }
+    },{passive:true});
+
+    zone.addEventListener('touchend',e=>{
+      if(e.touches.length===0) mode=null;
+      else if(e.touches.length===1){ // dropped from pinch to drag
+        mode='drag';
+        startX=e.touches[0].clientX; startY=e.touches[0].clientY;
+        baseOffX=S.offsetX; baseOffY=S.offsetY;
+      }
+    },{passive:true});
+
+    // Desktop: drag with mouse to move, wheel to scale (for testing)
+    let mDown=false;
+    zone.addEventListener('mousedown',e=>{if(!currentVRM)return;mDown=true;startX=e.clientX;startY=e.clientY;baseOffX=S.offsetX;baseOffY=S.offsetY;});
+    window.addEventListener('mousemove',e=>{
+      if(!mDown||!currentVRM)return;
+      S.offsetX=baseOffX+pxToSceneX(e.clientX-startX);
+      S.offsetY=baseOffY+pxToSceneY(e.clientY-startY);
+      syncOffsetSliders();
+    });
+    window.addEventListener('mouseup',()=>{mDown=false;});
+    zone.addEventListener('wheel',e=>{
+      if(!currentVRM)return; e.preventDefault();
+      S.scale=Math.min(3.5,Math.max(0.3,S.scale*(e.deltaY<0?1.05:0.95)));
+      syncOffsetSliders();
+    },{passive:false});
+  })();
 
   // ── Hide / Show UI — eye button (stays as a transparent eye when hidden) ──
   (function setupHideUI(){
