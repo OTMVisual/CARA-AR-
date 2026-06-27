@@ -524,6 +524,31 @@ body{
 .guide-tip-text{font-size:12px;color:#6ea8b0;line-height:1.6;}
 
 #file-input{display:none;}
+
+/* ── Hide UI — floating eye toggle ─────────────────────────────────── */
+/* When hidden, fade out all interactive UI EXCEPT the hide-ui eye button */
+#ui.ui-hidden .topbar,
+#ui.ui-hidden #status-pill,
+#ui.ui-hidden #bottom-sheet,
+#ui.ui-hidden #no-vrm{
+  opacity:0;
+  pointer-events:none;
+}
+#ui .topbar,#ui #status-pill,#ui #bottom-sheet,#ui #no-vrm{transition:opacity 0.4s ease;}
+
+/* The hide-UI eye button — lives in the top bar, but when UI is hidden it
+   floats in the same top-right spot at low opacity so you can always tap it. */
+#btn-hide-ui{position:relative;z-index:50;transition:opacity 0.4s ease;}
+
+/* When UI is hidden: keep ONLY this button visible, pinned & semi-transparent */
+#ui.ui-hidden #btn-hide-ui{
+  position:fixed;
+  top:54px;right:16px;
+  opacity:0.35;            /* transparent in hide mode */
+  pointer-events:auto;     /* still tappable */
+  z-index:200;
+}
+#ui.ui-hidden #btn-hide-ui:active{opacity:0.7;}
 </style>
 </head>
 <body>
@@ -581,7 +606,7 @@ body{
       </div>
       <div class="splash-title cara-font"><span>CARA AR</span></div>
       <div class="splash-tagline">Wear your VRM avatar in real time. Your face drives every expression, every movement.</div>
-      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION V2</div>
+      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION V1</div>
     </div>
 
     <div class="steps-list">
@@ -616,6 +641,11 @@ body{
 
   <!-- ── MAIN UI ── -->
   <div id="ui" class="gone">
+    <!-- Hide UI (eye) — OUTSIDE topbar so it isn't faded when UI hides -->
+    <button class="ic-btn" id="btn-hide-ui" title="Hide UI">
+      <svg id="hide-ui-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.46 10C3.732 6.93 6.638 4.75 10 4.75S16.268 6.93 17.54 10C16.268 13.07 13.362 15.25 10 15.25S3.732 13.07 2.46 10z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.6"/></svg>
+    </button>
+
     <!-- Top bar -->
     <div class="topbar">
       <div class="topbar-brand cara-font">CARA AR</div>
@@ -767,6 +797,11 @@ body{
             <div class="sl-row"><span class="sl-name">Head Size</span><input type="range" id="sl-scale" min="0.5" max="3" step="0.05" value="1.4"><span class="sl-val" id="vl-scale">1.40</span></div>
             <div class="sl-row"><span class="sl-name">Up / Down</span><input type="range" id="sl-offsety" min="-2" max="2" step="0.05" value="0.1"><span class="sl-val" id="vl-offsety">0.10</span></div>
             <div class="sl-row"><span class="sl-name">Depth</span><input type="range" id="sl-depth" min="-3" max="0" step="0.05" value="-0.5"><span class="sl-val" id="vl-depth">-0.50</span></div>
+            <div class="sl-row"><span class="sl-name">Rotate</span><input type="range" id="sl-rot" min="0" max="360" step="1" value="0"><span class="sl-val" id="vl-rot">0°</span></div>
+            <button class="btn-secondary" id="btn-face-viewer" style="margin-top:4px;">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5" fill="currentColor" stroke="none"/></svg>
+              Face the Viewer
+            </button>
           </div>
           <div class="sl-section">
             <div class="sl-label">Tracking Feel</div>
@@ -896,13 +931,28 @@ body{
             <div class="guide-step-desc">The grid-globe icon overlays a live wireframe of your tracked face points plus a "center your head here" ring — great for lining up. The circular-arrows icon flips between front and back cameras.</div>
           </div>
         </div>
+        <div class="guide-step">
+          <div class="guide-num">10</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Rotate Your Avatar</div>
+            <div class="guide-step-desc">Open Controls → Track and use the Rotate slider to spin your avatar a full 360°. By default it faces you so viewers see your expressions. Tap "Face the Viewer" anytime to snap it straight back to facing the camera.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">11</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Hide UI for Streaming</div>
+            <div class="guide-step-desc">Tap the small tab on the right edge of the screen to hide all buttons and controls for clean recording. The tab stays visible on the edge — tap it again to bring everything back. Your avatar keeps tracking the whole time, so it's perfect for streams and videos.</div>
+          </div>
+        </div>
         <div class="guide-tip">
-          <div class="guide-tip-title">Pro Tips</div>
+          <div class="guide-tip-title">Streamer &amp; Creator Tips</div>
           <div class="guide-tip-desc">
-            • Best results in good lighting facing you<br>
+            • Tap the edge tab to hide controls, tap it again to show them<br>
             • Turn on the Ring Light if your room is dark<br>
-            • Use Green or Blue background to chroma-key later<br>
-            • Use Smoothing ~0.6 for cinematic feel, ~0.2 for reactive feel<br>
+            • Use Green or Blue background to chroma-key in your editor<br>
+            • Use the Rotate slider for profile or 3/4 angle shots<br>
+            • Smoothing ~0.6 = cinematic, ~0.2 = snappy/reactive<br>
             • If the avatar looks off, adjust Head Size and Up/Down first<br>
             • Restart Camera in the Camera tab if the feed freezes
           </div>
@@ -947,6 +997,7 @@ let avatarVisible = true, bgVisible = true, neckEnabled = false;
 let trayOpen = false;
 let cameraActive = false;
 let smoothX=0,smoothY=0,smoothRX=0,smoothRY=0,smoothRZ=0;
+let userRotY=0; // base avatar facing — 0 = face the viewer (verified by geometry test)
 
 const S = { scale:1.4, offsetY:0.1, depth:-0.5, sensitivity:1.2, smooth:0.4 };
 
@@ -1090,7 +1141,6 @@ async function loadVRM(file){
     if(vrm){
       try{ VRMUtils.removeUnnecessaryVertices(vrm.scene); }catch(e){}
       try{ VRMUtils.removeUnnecessaryJoints(vrm.scene); }catch(e){}
-      vrm.scene.rotation.y=Math.PI;            // VRM 0.x faces +Z → turn to camera
       vrm.scene.traverse(o=>{o.frustumCulled=false;}); // never cull the head
       scene.add(vrm.scene);
       currentVRM={scene:vrm.scene,vrm:vrm,isVRM:true};
@@ -1098,7 +1148,6 @@ async function loadVRM(file){
       document.getElementById('vrm-sub').textContent='VRM · Full expression tracking';
     }else{
       modelScene=gltf.scene||gltf.scenes[0];
-      modelScene.rotation.y=Math.PI;
       modelScene.traverse(o=>{o.frustumCulled=false;});
       scene.add(modelScene);
       currentVRM={scene:modelScene,isPlainGLTF:true};
@@ -1175,6 +1224,29 @@ function applyBlendShapes(b){
   setMorph('eyeLookInRight',  b.eyeInR  ||0);
   setMorph('eyeLookOutLeft',  b.eyeOutL ||0);
   setMorph('eyeLookOutRight', b.eyeOutR ||0);
+
+  // ── Richer expressions (safe no-op if a model lacks them) ──────────────
+  setMorph('cheekSquintLeft',    b.cheekSqL ||0);
+  setMorph('cheekSquintRight',   b.cheekSqR ||0);
+  setMorph('noseSneerLeft',      b.sneerL   ||0);
+  setMorph('noseSneerRight',     b.sneerR   ||0);
+  setMorph('mouthPucker',        b.pucker   ||0);
+  setMorph('mouthLeft',          b.mouthL   ||0);
+  setMorph('mouthRight',         b.mouthR   ||0);
+  setMorph('jawLeft',            b.jawL     ||0);
+  setMorph('jawRight',           b.jawR     ||0);
+  setMorph('mouthUpperUpLeft',   b.upperUpL ||0);
+  setMorph('mouthUpperUpRight',  b.upperUpR ||0);
+  setMorph('mouthLowerDownLeft', b.lowerDnL ||0);
+  setMorph('mouthLowerDownRight',b.lowerDnR ||0);
+  setMorph('mouthStretchLeft',   b.stretchL ||0);
+  setMorph('mouthStretchRight',  b.stretchR ||0);
+  setMorph('mouthPressLeft',     b.pressL   ||0);
+  setMorph('mouthPressRight',    b.pressR   ||0);
+  setMorph('mouthDimpleLeft',    b.dimpleL  ||0);
+  setMorph('mouthDimpleRight',   b.dimpleR  ||0);
+  setMorph('mouthShrugUpper',    b.shrugUp  ||0);
+  setMorph('mouthRollLower',     b.rollLow  ||0);
 }
 
 // ── Face tracking ──────────────────────────────────────────────────────────────
@@ -1342,6 +1414,55 @@ function onFaceResults(results){
     eyeOutR=Math.max(0,(irisR.x-lEyeC.x)*10);
   }
 
+  // ── Richer expression derivations ──────────────────────────────────────
+  const mouthC={x:(L[13].x+L[14].x)/2,y:(L[13].y+L[14].y)/2}; // mouth center
+  const faceMidX=(L[33].x+L[263].x)/2;                         // face vertical axis
+
+  // Nose sneer — nostril (L[97]/L[326]) lifts toward upper lip (L[0])
+  const sneerLv=Math.min(1,Math.max(0,(L[97].y-L[0].y-0.02)*22*sens));
+  const sneerRv=Math.min(1,Math.max(0,(L[326].y-L[0].y-0.02)*22*sens));
+
+  // Cheek squint — lower eyelid raises (eye height shrinks from bottom)
+  const cheekSqL=Math.min(1,Math.max(0,(squintL*0.8)));
+  const cheekSqR=Math.min(1,Math.max(0,(squintR*0.8)));
+
+  // Mouth pucker — lips narrow horizontally (kiss): mouth width shrinks
+  const pucker=Math.min(1,Math.max(0,(0.11-mW)*9));
+
+  // Mouth left/right — mouth center shifts off the face axis
+  const mouthShift=(mouthC.x-faceMidX);
+  const mouthLeftV =Math.min(1,Math.max(0,-mouthShift*22));
+  const mouthRightV=Math.min(1,Math.max(0, mouthShift*22));
+
+  // Jaw left/right — chin shifts off axis
+  const jawShift=(L[152].x-faceMidX);
+  const jawLeftV =Math.min(1,Math.max(0,-jawShift*16));
+  const jawRightV=Math.min(1,Math.max(0, jawShift*16));
+
+  // Upper lip raise (sneer-like, per side)
+  const upperUpL=Math.min(1,Math.max(0,(L[37].y-L[0].y-0.01)*16*sens));
+  const upperUpR=Math.min(1,Math.max(0,(L[267].y-L[0].y-0.01)*16*sens));
+
+  // Lower lip drop (per side) — active with jaw open
+  const lowerDnL=Math.min(1,jawOpen*0.6);
+  const lowerDnR=Math.min(1,jawOpen*0.6);
+
+  // Mouth stretch — corners pull wide horizontally (mouth wider than neutral)
+  const stretchAmt=Math.min(1,Math.max(0,(mW-0.13)*7));
+  const stretchL=stretchAmt, stretchR=stretchAmt;
+
+  // Lip press — lips thin and pressed (low mouth height, normal width)
+  const pressAmt=(mH<0.012 && mW>0.10)?Math.min(1,(0.012-mH)*60):0;
+  const pressL=pressAmt, pressR=pressAmt;
+
+  // Dimple — accompanies a smile
+  const dimpleL=Math.min(1,smileL*0.5), dimpleR=Math.min(1,smileR*0.5);
+
+  // Upper-lip shrug
+  const shrugUp=upperUpL>0||upperUpR>0?Math.min(1,(upperUpL+upperUpR)/2):0;
+  // Lower-lip roll (proxy with mouth close)
+  const rollLow=mouthClose*0.5;
+
   applyBlendShapes({
     blinkL,blinkR,jawOpen,mouthClose,funnel,
     smileL,smileR,frownL,frownR,cheekPuff,
@@ -1349,6 +1470,11 @@ function onFaceResults(results){
     squintL,squintR,wideL,wideR,
     eyeUpL,eyeDnL,eyeInL,eyeOutL,
     eyeUpR,eyeDnR,eyeInR,eyeOutR,
+    // richer set
+    cheekSqL,cheekSqR,sneerL:sneerLv,sneerR:sneerRv,pucker,
+    mouthL:mouthLeftV,mouthR:mouthRightV,jawL:jawLeftV,jawR:jawRightV,
+    upperUpL,upperUpR,lowerDnL,lowerDnR,stretchL,stretchR,
+    pressL,pressR,dimpleL,dimpleR,shrugUp,rollLow,
     tongueOut:0 // not detectable via MediaPipe landmarks
   });
 }
@@ -1363,7 +1489,7 @@ function loop(){
   if(currentVRM&&avatarVisible){
     const vs=currentVRM.scene;
     vs.position.set(smoothX,smoothY,S.depth);
-    vs.rotation.set(smoothRX,smoothRY,smoothRZ);
+    vs.rotation.set(smoothRX, smoothRY + userRotY, smoothRZ); // userRotY = base facing
     vs.scale.setScalar(S.scale);
     vs.visible=true;
     if(currentVRM.isVRM&&currentVRM.vrm&&currentVRM.vrm.update){
@@ -1705,6 +1831,36 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
       document.getElementById(vid).textContent=v.toFixed(2);
     });
   });
+
+  // ── Rotate slider (0–360°) — sets base avatar facing ──
+  document.getElementById('sl-rot').addEventListener('input',e=>{
+    const deg=parseFloat(e.target.value);
+    userRotY=deg*Math.PI/180;
+    document.getElementById('vl-rot').textContent=Math.round(deg)+'°';
+  });
+  // ── Face the Viewer — snap back to facing the camera ──
+  document.getElementById('btn-face-viewer').addEventListener('click',()=>{
+    userRotY=0;
+    document.getElementById('sl-rot').value=0;
+    document.getElementById('vl-rot').textContent='0°';
+    toast('Avatar facing you',true);
+  });
+
+  // ── Hide / Show UI — eye button (stays as a transparent eye when hidden) ──
+  (function setupHideUI(){
+    const ui=document.getElementById('ui');
+    const btn=document.getElementById('btn-hide-ui');
+    const icon=document.getElementById('hide-ui-icon');
+    const eyeOpen='<path d="M2.46 10C3.732 6.93 6.638 4.75 10 4.75S16.268 6.93 17.54 10C16.268 13.07 13.362 15.25 10 15.25S3.732 13.07 2.46 10z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.6"/>';
+    const eyeClosed='<path d="M1 1l18 18M6.72 6.72A7.94 7.94 0 002.46 10C3.732 13.07 6.638 15.25 10 15.25c1.33 0 2.587-.35 3.68-.966M9.145 4.81A8.014 8.014 0 0110 4.75c3.362 0 6.268 2.18 7.54 5.25a8.017 8.017 0 01-2.175 2.86" stroke-linecap="round"/>';
+    btn.addEventListener('click',()=>{
+      const nowHidden=ui.classList.toggle('ui-hidden');
+      if(nowHidden) closeTray();
+      // swap icon: open eye = visible, struck eye = hidden
+      icon.innerHTML = nowHidden ? eyeClosed : eyeOpen;
+      if(navigator.vibrate){try{navigator.vibrate(15);}catch(_){}}
+    });
+  })();
 
   // ── Swipe tray to close ──
   let startY=0;
