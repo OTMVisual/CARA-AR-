@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CARA AR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Root ─────────────────────────────────────────────────── */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+
+:root{
+  --g1:#00e5a0;   /* mint green */
+  --g2:#00b4d8;   /* cyan */
+  --g3:#0077ff;   /* blue */
+  --g4:#003cff;   /* deep blue */
+  --grad:linear-gradient(135deg,var(--g1),var(--g2),var(--g3));
+  --grad2:linear-gradient(135deg,var(--g3),var(--g1));
+  --grad-text:linear-gradient(90deg,var(--g1) 0%,var(--g2) 50%,var(--g3) 100%);
+  --glass:rgba(4,12,24,0.78);
+  --glass2:rgba(0,20,40,0.88);
+  --border:rgba(0,229,160,0.18);
+  --border2:rgba(0,180,216,0.22);
+  --text:#f0fffe;
+  --muted:#5a8a90;
+  --surface:rgba(2,10,22,0.92);
+  --safe-b:env(safe-area-inset-bottom,20px);
+}
+
+body{
+  background:#000;
+  font-family:'Inter',system-ui,sans-serif;
+  overflow:hidden;height:100dvh;width:100vw;
+  color:var(--text);user-select:none;-webkit-user-select:none;
+}
+
+/* AKIRA-style display font fallback using Barlow Condensed which is very close */
+.cara-font{
+  font-family:'Barlow Condensed',sans-serif;
+  font-weight:900;
+  letter-spacing:0.12em;
+  text-transform:uppercase;
+}
+
+#app{position:relative;width:100vw;height:100dvh;overflow:hidden;}
+
+#video{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;transform:scaleX(-1);z-index:0;background:#000;
+}
+
+#three-canvas{
+  position:absolute;inset:0;
+  width:100%!important;height:100%!important;
+  z-index:1;pointer-events:none;
+}
+
+#flash{position:absolute;inset:0;background:#fff;opacity:0;z-index:80;pointer-events:none;transition:opacity 0.08s;}
+
+/* ── SCANLINE OVERLAY (premium look) ─────────────────────────────── */
+#scanlines{
+  position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);
+}
+
+/* ── CORNER BRACKETS (AR aesthetic) ──────────────────────────────── */
+#brackets{position:absolute;inset:0;z-index:3;pointer-events:none;}
+.brk{position:absolute;width:28px;height:28px;}
+.brk::before,.brk::after{content:'';position:absolute;background:var(--g1);opacity:0.7;}
+.brk::before{width:2px;height:100%;}
+.brk::after{width:100%;height:2px;}
+.brk.tl{top:20px;left:20px;}
+.brk.tr{top:20px;right:20px;transform:scaleX(-1);}
+.brk.bl{bottom:20px;left:20px;transform:scaleY(-1);}
+.brk.br{bottom:20px;right:20px;transform:scale(-1);}
+
+/* ── LOADING ──────────────────────────────────────────────────────── */
+#loading{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 40%,#020f1e 0%,#000 70%);
+  z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+  transition:opacity 0.5s;
+}
+#loading.out{opacity:0;pointer-events:none;}
+
+.ld-logo-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;}
+.ld-icon{
+  width:72px;height:72px;border-radius:20px;
+  background:var(--glass2);border:1px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;margin-bottom:6px;
+  position:relative;overflow:hidden;
+}
+.ld-icon::before{
+  content:'';position:absolute;inset:0;
+  background:var(--grad);opacity:0.15;
+}
+.ld-icon svg{width:38px;height:38px;position:relative;z-index:1;}
+
+.ld-title{
+  font-size:32px;line-height:1;
+  background:var(--grad-text);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.ld-sub{font-size:10px;color:var(--muted);letter-spacing:0.18em;text-transform:uppercase;}
+
+.ld-bar-wrap{
+  width:180px;height:2px;
+  background:rgba(0,229,160,0.12);border-radius:10px;overflow:hidden;
+}
+.ld-bar{
+  height:100%;width:0%;border-radius:10px;
+  background:var(--grad);transition:width 0.4s cubic-bezier(.4,0,.2,1);
+}
+#ld-msg{font-size:11px;color:var(--muted);letter-spacing:0.06em;}
+
+/* ── SPLASH ───────────────────────────────────────────────────────── */
+#splash{
+  position:absolute;inset:0;z-index:150;
+  background:radial-gradient(ellipse at 50% 20%,#021828 0%,#000 65%);
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 24px calc(var(--safe-b) + 40px);
+}
+#splash.gone{display:none;}
+
+.splash-top{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;text-align:center;
+  padding-top:60px;
+}
+
+.splash-badge{
+  width:80px;height:80px;border-radius:22px;
+  background:var(--glass2);border:1px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;
+  box-shadow:0 0 60px rgba(0,180,216,0.25),0 0 120px rgba(0,229,160,0.1);
+}
+.splash-badge::before{content:'';position:absolute;inset:0;background:var(--grad);opacity:0.12;}
+.splash-badge svg{width:40px;height:40px;position:relative;z-index:1;}
+
+.splash-title{font-size:38px;line-height:1;}
+.splash-title span{
+  background:var(--grad-text);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.splash-tagline{
+  font-size:13px;color:#6ba8b0;line-height:1.7;max-width:260px;
+  font-weight:500;
+}
+
+.steps-list{
+  display:flex;flex-direction:column;gap:10px;width:100%;margin-bottom:20px;
+}
+.step-item{
+  display:flex;align-items:center;gap:14px;
+  background:rgba(0,229,160,0.04);
+  border:1px solid rgba(0,229,160,0.1);
+  border-radius:14px;padding:13px 16px;
+}
+.step-num{
+  width:26px;height:26px;border-radius:8px;flex-shrink:0;
+  background:rgba(0,180,216,0.15);border:1px solid rgba(0,180,216,0.35);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:800;
+  background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  /* override for the border box */
+  background:rgba(0,180,216,0.15);color:var(--g2);
+}
+.step-body{flex:1;}
+.step-title{font-size:13px;font-weight:700;color:var(--text);}
+.step-desc{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.45;}
+
+/* Primary CTA button */
+.btn-primary{
+  width:100%;padding:17px;border:none;border-radius:16px;cursor:pointer;
+  background:var(--grad);color:#001a10;
+  font-size:15px;font-weight:800;letter-spacing:0.04em;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  box-shadow:0 4px 32px rgba(0,229,160,0.3),0 2px 8px rgba(0,180,216,0.2);
+  transition:transform 0.12s,box-shadow 0.12s;
+  position:relative;overflow:hidden;
+}
+.btn-primary::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,0.15),transparent);
+}
+.btn-primary:active{transform:scale(0.97);box-shadow:0 2px 12px rgba(0,229,160,0.2);}
+
+/* ── MAIN UI ──────────────────────────────────────────────────────── */
+#ui{position:absolute;inset:0;z-index:10;pointer-events:none;display:flex;flex-direction:column;}
+#ui.gone{display:none;}
+
+/* Top bar */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:52px 16px 12px;
+  background:linear-gradient(to bottom,rgba(0,0,0,0.65) 0%,transparent 100%);
+  pointer-events:auto;
+}
+.topbar-brand{
+  font-size:18px;
+  background:var(--grad-text);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.topbar-right{display:flex;gap:8px;align-items:center;}
+
+/* Icon button */
+.ic-btn{
+  width:38px;height:38px;border-radius:12px;
+  background:var(--glass);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--border);
+  color:var(--g1);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background 0.18s,border-color 0.18s;
+}
+.ic-btn:active{background:rgba(0,229,160,0.15);}
+.ic-btn.lit{background:rgba(0,180,216,0.2);border-color:rgba(0,180,216,0.5);}
+.ic-btn svg{width:18px;height:18px;}
+
+/* Status pill */
+#status-pill{
+  align-self:center;margin:0 auto;
+  background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid var(--border);border-radius:20px;
+  padding:5px 14px;font-size:11px;font-weight:600;letter-spacing:0.05em;
+  display:flex;align-items:center;gap:6px;pointer-events:none;
+}
+.sdot{width:7px;height:7px;border-radius:50%;background:var(--g1);animation:blink 2s infinite;flex-shrink:0;}
+.sdot.warn{background:#f59e0b;animation:none;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+
+.flex1{flex:1;}
+
+/* No VRM hint */
+#no-vrm{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  text-align:center;pointer-events:none;z-index:5;
+}
+#no-vrm.gone{display:none;}
+.nv-ring{
+  width:60px;height:60px;border-radius:50%;
+  border:2px dashed rgba(0,229,160,0.3);
+  display:flex;align-items:center;justify-content:center;
+  margin:0 auto 10px;
+}
+.nv-ring svg{width:26px;height:26px;color:rgba(0,229,160,0.35);}
+.nv-text{font-size:13px;color:rgba(255,255,255,0.3);font-weight:500;}
+
+/* ── BOTTOM SHEET ─────────────────────────────────────────────────── */
+#bottom-sheet{
+  position:absolute;bottom:0;left:0;right:0;z-index:30;pointer-events:auto;
+}
+
+.cam-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px calc(var(--safe-b) + 12px);gap:10px;
+  background:linear-gradient(to top,rgba(0,0,0,0.75) 0%,transparent 100%);
+}
+
+/* Shutter */
+.shutter{
+  width:66px;height:66px;border-radius:50%;flex-shrink:0;cursor:pointer;
+  background:#fff;border:4px solid rgba(255,255,255,0.35);
+  position:relative;transition:transform 0.12s;
+}
+.shutter::after{content:'';position:absolute;inset:6px;border-radius:50%;border:2px solid rgba(0,0,0,0.15);}
+.shutter:active{transform:scale(0.88);}
+
+/* Side pill buttons */
+.side-col{display:flex;flex-direction:column;gap:8px;}
+
+.pill-btn{
+  height:40px;border-radius:11px;
+  background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--border);
+  color:var(--g1);font-size:11px;font-weight:700;letter-spacing:0.02em;
+  cursor:pointer;padding:0 13px;
+  display:flex;align-items:center;gap:7px;white-space:nowrap;
+  transition:background 0.15s,border-color 0.15s;
+}
+.pill-btn svg{width:14px;height:14px;flex-shrink:0;}
+.pill-btn:active{background:rgba(0,229,160,0.15);}
+.pill-btn.active{
+  background:rgba(0,180,216,0.2);border-color:rgba(0,180,216,0.5);color:var(--g2);
+}
+
+/* ── TRAY ─────────────────────────────────────────────────────────── */
+#tray{
+  background:var(--surface);
+  backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+  border-top:1px solid var(--border);
+  border-radius:22px 22px 0 0;
+  overflow:hidden;max-height:0;
+  transition:max-height 0.34s cubic-bezier(0.32,0.72,0,1);
+}
+#tray.open{max-height:500px;}
+
+.handle-row{display:flex;justify-content:center;padding:10px 0 0;}
+.handle-bar{width:36px;height:4px;border-radius:10px;background:rgba(0,229,160,0.2);}
+
+/* Tray tabs */
+.tray-tabs{
+  display:flex;border-bottom:1px solid rgba(0,229,160,0.1);
+  padding:12px 14px 0;gap:4px;
+}
+.ttab{
+  flex:1;padding:7px 4px 10px;background:transparent;border:none;
+  color:var(--muted);font-size:11px;font-weight:700;letter-spacing:0.04em;
+  cursor:pointer;border-bottom:2px solid transparent;
+  transition:color 0.2s,border-color 0.2s;text-transform:uppercase;
+}
+.ttab.active{color:var(--g1);border-color:var(--g2);}
+
+.tpanel{display:none;padding:14px 14px 20px;overflow-y:auto;max-height:380px;}
+.tpanel.active{display:block;}
+
+/* VRM panel */
+.vrm-card{
+  background:rgba(0,229,160,0.04);border:1px solid var(--border);
+  border-radius:14px;padding:12px 14px;
+  display:flex;align-items:center;gap:12px;margin-bottom:12px;
+}
+.vrm-icon{
+  width:42px;height:42px;border-radius:11px;
+  background:rgba(0,180,216,0.12);border:1px solid rgba(0,180,216,0.3);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.vrm-icon svg{width:22px;height:22px;color:var(--g2);}
+.vrm-info{flex:1;min-width:0;}
+.vrm-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vrm-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+
+.btn-import{
+  width:100%;padding:14px;border-radius:13px;cursor:pointer;
+  background:rgba(0,229,160,0.08);border:1px solid rgba(0,229,160,0.3);
+  color:var(--g1);font-size:14px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  transition:background 0.15s;
+}
+.btn-import svg{width:16px;height:16px;}
+.btn-import:active{background:rgba(0,229,160,0.15);}
+
+/* Sliders */
+.sl-section{margin-bottom:12px;}
+.sl-label{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;}
+.sl-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.sl-name{font-size:12px;color:#8ab8bf;width:74px;flex-shrink:0;}
+.sl-row input[type=range]{
+  flex:1;-webkit-appearance:none;height:3px;border-radius:10px;
+  background:rgba(0,229,160,0.15);outline:none;
+}
+.sl-row input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:17px;height:17px;border-radius:50%;
+  background:var(--grad);cursor:pointer;
+  box-shadow:0 0 8px rgba(0,229,160,0.5);
+}
+.sl-val{font-size:11px;color:var(--muted);width:32px;text-align:right;}
+
+/* Lighting */
+.preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.preset-card{
+  padding:11px;border-radius:12px;text-align:center;cursor:pointer;
+  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);
+  transition:background 0.15s,border-color 0.15s;
+}
+.preset-card.sel{background:rgba(0,229,160,0.12);border-color:rgba(0,229,160,0.4);}
+.preset-icon-wrap{
+  width:32px;height:32px;border-radius:9px;margin:0 auto 6px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,180,216,0.1);
+}
+.preset-icon-wrap svg{width:18px;height:18px;}
+.preset-name{font-size:11px;font-weight:700;color:#b0c8cf;}
+
+.color-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.color-lbl{font-size:12px;color:#8ab8bf;width:74px;flex-shrink:0;}
+.color-row input[type=color]{
+  width:34px;height:26px;border:none;border-radius:7px;background:none;cursor:pointer;padding:0;
+}
+
+/* Camera panel */
+.cam-status{
+  background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.2);
+  border-radius:12px;padding:11px 13px;margin-bottom:12px;
+  display:flex;align-items:center;gap:10px;
+}
+.cam-status.warn{background:rgba(245,158,11,0.06);border-color:rgba(245,158,11,0.2);}
+.csb-dot{width:7px;height:7px;border-radius:50%;background:var(--g1);flex-shrink:0;animation:blink 2s infinite;}
+.csb-dot.warn{background:#f59e0b;animation:none;}
+.csb-text{font-size:12px;font-weight:700;}
+.csb-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+
+.btn-secondary{
+  width:100%;padding:12px;border-radius:11px;cursor:pointer;
+  background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+  color:#c0d8dc;font-size:13px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:background 0.15s;
+}
+.btn-secondary svg{width:15px;height:15px;}
+.btn-secondary:active{background:rgba(255,255,255,0.09);}
+
+.toggle-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 0;border-bottom:1px solid rgba(0,229,160,0.08);
+}
+.toggle-row:last-child{border-bottom:none;}
+.toggle-label{font-size:13px;font-weight:600;color:#d0eef0;}
+.toggle-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+.toggle-sw{
+  position:relative;width:44px;height:26px;cursor:pointer;
+  background:#0a1a24;border-radius:13px;border:none;
+  transition:background 0.2s;flex-shrink:0;
+}
+.toggle-sw::after{
+  content:'';position:absolute;top:3px;left:3px;
+  width:20px;height:20px;border-radius:50%;background:#fff;
+  transition:transform 0.2s;
+}
+.toggle-sw.on{background:linear-gradient(135deg,var(--g2),var(--g1));}
+.toggle-sw.on::after{transform:translateX(18px);}
+
+/* Toast */
+#toast{
+  position:absolute;bottom:155px;left:50%;transform:translateX(-50%);
+  background:var(--glass2);color:var(--text);backdrop-filter:blur(16px);
+  padding:9px 18px;border-radius:11px;font-size:12px;font-weight:700;
+  z-index:300;opacity:0;transition:opacity 0.25s;white-space:nowrap;
+  pointer-events:none;border:1px solid var(--border);
+}
+#toast.show{opacity:1;}
+
+/* ── HOW TO USE MODAL ─────────────────────────────────────────────── */
+#guide-modal{
+  position:absolute;inset:0;z-index:400;
+  background:rgba(0,0,0,0.88);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  padding-bottom:calc(var(--safe-b) + 20px);
+}
+#guide-modal.gone{display:none;}
+
+.guide-sheet{
+  width:100%;max-height:82vh;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:24px 24px 0 0;
+  overflow:hidden;display:flex;flex-direction:column;
+}
+.guide-header{
+  padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+}
+.guide-title{font-size:19px;}
+.guide-title span{
+  background:var(--grad-text);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.guide-close{
+  width:34px;height:34px;border-radius:10px;
+  background:rgba(0,229,160,0.08);border:1px solid var(--border);
+  color:var(--g1);cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.guide-close svg{width:16px;height:16px;}
+.guide-body{overflow-y:auto;padding:16px 20px 24px;flex:1;}
+
+.guide-step{
+  display:flex;gap:14px;padding:14px 0;
+  border-bottom:1px solid rgba(0,229,160,0.08);
+}
+.guide-step:last-child{border-bottom:none;}
+.guide-num{
+  width:32px;height:32px;border-radius:10px;flex-shrink:0;
+  background:rgba(0,180,216,0.12);border:1px solid rgba(0,180,216,0.3);
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:800;color:var(--g2);
+}
+.guide-step-body{}
+.guide-step-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;}
+.guide-step-desc{font-size:12px;color:#6ea8b0;line-height:1.6;}
+.guide-tip{
+  margin-top:16px;padding:12px 14px;
+  background:rgba(0,229,160,0.05);border:1px solid rgba(0,229,160,0.15);
+  border-radius:11px;
+}
+.guide-tip-title{font-size:11px;font-weight:800;color:var(--g1);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;}
+.guide-tip-text{font-size:12px;color:#6ea8b0;line-height:1.6;}
+
+#file-input{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="three-canvas"></canvas>
+  <div id="flash"></div>
+  <div id="scanlines"></div>
+  <div id="brackets">
+    <div class="brk tl"></div>
+    <div class="brk tr"></div>
+    <div class="brk bl"></div>
+    <div class="brk br"></div>
+  </div>
+
+  <!-- ── LOADING ── -->
+  <div id="loading">
+    <div class="ld-logo-wrap">
+      <div class="ld-icon">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="16" r="8" stroke="url(#g1)" stroke-width="2"/>
+          <path d="M8 36c0-6.627 5.373-12 12-12s12 5.373 12 12" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="20" cy="16" r="3" fill="url(#g1)" opacity="0.6"/>
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#00e5a0"/><stop offset="0.5" stop-color="#00b4d8"/><stop offset="1" stop-color="#0077ff"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="ld-title cara-font">CARA AR</div>
+      <div class="ld-sub">Avatar Reality Engine</div>
+    </div>
+    <div class="ld-bar-wrap"><div class="ld-bar" id="ld-bar"></div></div>
+    <div id="ld-msg">Initialising…</div>
+  </div>
+
+  <!-- ── SPLASH ── -->
+  <div id="splash" class="gone">
+    <div class="splash-top">
+      <div class="splash-badge">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="16" r="8" stroke="url(#gs)" stroke-width="2"/>
+          <path d="M8 36c0-6.627 5.373-12 12-12s12 5.373 12 12" stroke="url(#gs)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="20" cy="16" r="3" fill="url(#gs)" opacity="0.7"/>
+          <defs>
+            <linearGradient id="gs" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#00e5a0"/><stop offset="0.5" stop-color="#00b4d8"/><stop offset="1" stop-color="#0077ff"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="splash-title cara-font"><span>CARA AR</span></div>
+      <div class="splash-tagline">Wear your VRM avatar in real time. Your face drives every expression, every movement.</div>
+    </div>
+
+    <div class="steps-list">
+      <div class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">Allow Camera</div>
+          <div class="step-desc">Tap below — your browser will ask for camera permission</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Import Your VRM</div>
+          <div class="step-desc">Tap "Import VRM" and select your .vrm file from Files</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Go Live</div>
+          <div class="step-desc">Your avatar mirrors your face in real time — blink, smile, speak</div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="start-btn">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+      Enable Camera &amp; Start
+    </button>
+  </div>
+
+  <!-- ── MAIN UI ── -->
+  <div id="ui" class="gone">
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="topbar-brand cara-font">CARA AR</div>
+      <div class="topbar-right">
+        <!-- Help button -->
+        <button class="ic-btn" id="btn-help" title="How to use">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M10 14v-1M10 11c0-1.5 2-1.5 2-3a2 2 0 10-4 0" stroke-linecap="round"/></svg>
+        </button>
+        <!-- Hide avatar -->
+        <button class="ic-btn" id="btn-hide-avatar" title="Toggle Avatar">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 1l18 18M6.72 6.72A7.94 7.94 0 002.46 10C3.732 13.07 6.638 15.25 10 15.25c1.33 0 2.587-.35 3.68-.966M9.145 4.81A8.014 8.014 0 0110 4.75c3.362 0 6.268 2.18 7.54 5.25a8.017 8.017 0 01-2.175 2.86" stroke-linecap="round"/><circle cx="10" cy="10" r="2.5" stroke-linecap="round"/></svg>
+        </button>
+        <!-- Toggle BG -->
+        <button class="ic-btn" id="btn-bg" title="Toggle Background">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="16" height="12" rx="2"/><circle cx="7" cy="8.5" r="1.5" fill="currentColor"/><path d="M2 14l4-4 3 3 3-3.5 6 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Status pill -->
+    <div id="status-pill">
+      <div class="sdot warn" id="sdot"></div>
+      <span id="stxt">Detecting face…</span>
+    </div>
+
+    <div class="flex1"></div>
+
+    <!-- No VRM hint -->
+    <div id="no-vrm">
+      <div class="nv-ring">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 4v16M4 12l8-8 8 8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="nv-text">Tap Import VRM to load your avatar</div>
+    </div>
+
+    <!-- Bottom sheet -->
+    <div id="bottom-sheet">
+      <div class="cam-row">
+        <!-- Left controls -->
+        <div class="side-col">
+          <button class="pill-btn" id="btn-neck">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 10h12" stroke-linecap="round"/></svg>
+            Neck Mask
+          </button>
+          <button class="pill-btn" id="btn-open-tray">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10l5-5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Controls
+          </button>
+        </div>
+
+        <!-- Shutter -->
+        <button class="shutter" id="btn-shutter"></button>
+
+        <!-- Right controls -->
+        <div class="side-col">
+          <button class="pill-btn" id="btn-import-quick">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M5 7l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="10" width="12" height="4" rx="1"/></svg>
+            Import VRM
+          </button>
+          <button class="pill-btn" id="btn-light-quick">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="7" r="3"/><path d="M8 1v1M8 12v1M1 7h1M13 7h1M3.05 3.05l.7.7M11.25 11.25l.7.7M3.05 10.95l.7-.7M11.25 4.75l.7-.7" stroke-linecap="round"/></svg>
+            Lighting
+          </button>
+        </div>
+      </div>
+
+      <!-- Tray -->
+      <div id="tray">
+        <div class="handle-row"><div class="handle-bar"></div></div>
+        <div class="tray-tabs">
+          <button class="ttab active" data-tab="vrm">VRM</button>
+          <button class="ttab" data-tab="light">Light</button>
+          <button class="ttab" data-tab="tracking">Track</button>
+          <button class="ttab" data-tab="camera">Camera</button>
+        </div>
+
+        <!-- VRM panel -->
+        <div class="tpanel active" id="tp-vrm">
+          <div class="vrm-card">
+            <div class="vrm-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke-linecap="round"/></svg>
+            </div>
+            <div class="vrm-info">
+              <div class="vrm-name" id="vrm-name">No model loaded</div>
+              <div class="vrm-sub" id="vrm-sub">Import a .vrm file to begin</div>
+            </div>
+          </div>
+          <button class="btn-import" id="btn-import-main">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10M6 9l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 17h14" stroke-linecap="round"/></svg>
+            Import VRM from Files
+          </button>
+        </div>
+
+        <!-- Lighting panel -->
+        <div class="tpanel" id="tp-light">
+          <div class="preset-grid">
+            <div class="preset-card sel" data-preset="studio">
+              <div class="preset-icon-wrap">
+                <svg viewBox="0 0 20 20" fill="none" stroke="url(#pg)" stroke-width="1.6"><circle cx="10" cy="10" r="4"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.93 4.93l1.41 1.41M13.66 13.66l1.41 1.41M4.93 15.07l1.41-1.41M13.66 6.34l1.41-1.41" stroke-linecap="round"/><defs><linearGradient id="pg" x1="0" y1="0" x2="20" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#00e5a0"/><stop offset="1" stop-color="#0077ff"/></linearGradient></defs></svg>
+              </div>
+              <div class="preset-name">Studio</div>
+            </div>
+            <div class="preset-card" data-preset="warm">
+              <div class="preset-icon-wrap">
+                <svg viewBox="0 0 20 20" fill="none" stroke="#ffb347" stroke-width="1.6"><circle cx="10" cy="10" r="4"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2" stroke-linecap="round"/></svg>
+              </div>
+              <div class="preset-name">Warm</div>
+            </div>
+            <div class="preset-card" data-preset="cool">
+              <div class="preset-icon-wrap">
+                <svg viewBox="0 0 20 20" fill="none" stroke="#88ccff" stroke-width="1.6"><path d="M10 2v16M2 10h16M5 5l10 10M15 5L5 15" stroke-linecap="round"/></svg>
+              </div>
+              <div class="preset-name">Cool</div>
+            </div>
+            <div class="preset-card" data-preset="night">
+              <div class="preset-icon-wrap">
+                <svg viewBox="0 0 20 20" fill="none" stroke="#aa88ff" stroke-width="1.6"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>
+              </div>
+              <div class="preset-name">Night</div>
+            </div>
+          </div>
+          <div class="sl-section">
+            <div class="sl-row"><span class="sl-name">Brightness</span><input type="range" id="sl-ambient" min="0" max="3" step="0.05" value="1.2"><span class="sl-val" id="vl-ambient">1.20</span></div>
+            <div class="sl-row"><span class="sl-name">Key Light</span><input type="range" id="sl-dirlight" min="0" max="3" step="0.05" value="1.0"><span class="sl-val" id="vl-dirlight">1.00</span></div>
+            <div class="sl-row"><span class="sl-name">Fill Light</span><input type="range" id="sl-filllight" min="0" max="2" step="0.05" value="0.4"><span class="sl-val" id="vl-filllight">0.40</span></div>
+            <div class="sl-row"><span class="sl-name">Rim Light</span><input type="range" id="sl-rimlight" min="0" max="2" step="0.05" value="0.3"><span class="sl-val" id="vl-rimlight">0.30</span></div>
+            <div class="color-row"><span class="color-lbl">Key Color</span><input type="color" id="col-key" value="#ffffff"><span style="font-size:11px;color:var(--muted);">Key tint</span></div>
+            <div class="color-row"><span class="color-lbl">Fill Color</span><input type="color" id="col-fill" value="#a0c4ff"><span style="font-size:11px;color:var(--muted);">Fill tint</span></div>
+            <div class="color-row"><span class="color-lbl">Rim Color</span><input type="color" id="col-rim" value="#00e5a0"><span style="font-size:11px;color:var(--muted);">Rim tint</span></div>
+          </div>
+        </div>
+
+        <!-- Tracking panel -->
+        <div class="tpanel" id="tp-tracking">
+          <div class="sl-section">
+            <div class="sl-label">Avatar Position</div>
+            <div class="sl-row"><span class="sl-name">Head Size</span><input type="range" id="sl-scale" min="0.5" max="3" step="0.05" value="1.4"><span class="sl-val" id="vl-scale">1.40</span></div>
+            <div class="sl-row"><span class="sl-name">Up / Down</span><input type="range" id="sl-offsety" min="-2" max="2" step="0.05" value="0.1"><span class="sl-val" id="vl-offsety">0.10</span></div>
+            <div class="sl-row"><span class="sl-name">Depth</span><input type="range" id="sl-depth" min="-3" max="0" step="0.05" value="-0.5"><span class="sl-val" id="vl-depth">-0.50</span></div>
+          </div>
+          <div class="sl-section">
+            <div class="sl-label">Tracking Feel</div>
+            <div class="sl-row"><span class="sl-name">Sensitivity</span><input type="range" id="sl-sens" min="0.3" max="2.5" step="0.05" value="1.2"><span class="sl-val" id="vl-sens">1.20</span></div>
+            <div class="sl-row"><span class="sl-name">Smoothing</span><input type="range" id="sl-smooth" min="0.05" max="0.95" step="0.05" value="0.4"><span class="sl-val" id="vl-smooth">0.40</span></div>
+          </div>
+        </div>
+
+        <!-- Camera panel -->
+        <div class="tpanel" id="tp-camera">
+          <div class="cam-status" id="cam-status-block">
+            <div class="csb-dot warn" id="cam-sbdot"></div>
+            <div>
+              <div class="csb-text" id="cam-stxt">Camera not started</div>
+              <div class="csb-sub" id="cam-ssub">Tap below to enable</div>
+            </div>
+          </div>
+          <button class="btn-secondary" id="btn-restart-cam">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10a6 6 0 1012 0 6 6 0 00-12 0M4 4v4h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Restart Camera
+          </button>
+          <div style="margin-top:14px;">
+            <div class="toggle-row">
+              <div><div class="toggle-label">AR Background</div><div class="toggle-sub">Show live camera behind avatar</div></div>
+              <button class="toggle-sw on" id="tog-bg"></button>
+            </div>
+            <div class="toggle-row">
+              <div><div class="toggle-label">Show Avatar</div><div class="toggle-sub">Toggle VRM visibility</div></div>
+              <button class="toggle-sw on" id="tog-avatar"></button>
+            </div>
+            <div class="toggle-row">
+              <div><div class="toggle-label">Neck Mask</div><div class="toggle-sub">Fade avatar body at collar</div></div>
+              <button class="toggle-sw" id="tog-neck"></button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /tray -->
+    </div><!-- /bottom-sheet -->
+  </div><!-- /ui -->
+
+  <!-- ── HOW TO USE GUIDE ── -->
+  <div id="guide-modal" class="gone">
+    <div class="guide-sheet">
+      <div class="guide-header">
+        <div class="guide-title cara-font"><span>HOW TO USE</span></div>
+        <button class="guide-close" id="guide-close-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="guide-body">
+        <div class="guide-step">
+          <div class="guide-num">1</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Enable Your Camera</div>
+            <div class="guide-step-desc">When you first open CARA AR, tap "Enable Camera &amp; Start." Your browser will ask for camera permission — tap Allow. This is required for face tracking to work. CARA AR only uses your front camera and never stores or uploads footage.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">2</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Import Your VRM Avatar</div>
+            <div class="guide-step-desc">Tap the "Import VRM" button (bottom right) or open the Controls tray and select the VRM tab. Choose any .vrm file from your device — VRM 0.x files with ARKit morph targets work best for full expression tracking.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">3</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Face Your Camera</div>
+            <div class="guide-step-desc">Look directly at your front camera. The green status dot at the top will turn solid when your face is detected. Your avatar will appear and mirror your head movements, blinks, mouth opens, and eyebrow raises in real time.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">4</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Adjust Avatar Position</div>
+            <div class="guide-step-desc">Open Controls → Track tab to adjust Head Size (scale), Up/Down position, and Depth. Use these sliders to align the avatar perfectly over your face. Sensitivity and Smoothing control how responsive and fluid the tracking feels.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">5</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Adjust Lighting</div>
+            <div class="guide-step-desc">Tap "Lighting" (bottom right) or open Controls → Light tab. Choose a preset (Studio, Warm, Cool, Night) or fine-tune individual lights with the sliders and color pickers.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">6</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Take a Photo</div>
+            <div class="guide-step-desc">Tap the large white shutter button in the center bottom to capture a photo. It will download automatically as a PNG. The flash effect confirms your capture.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">7</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Top Bar Controls</div>
+            <div class="guide-step-desc">The three icons at the top right let you access this guide (? icon), hide/show your avatar (eye icon), and toggle the camera background (image icon). The Neck Mask button (bottom left) fades out the avatar's body below the head for a cleaner look.</div>
+          </div>
+        </div>
+        <div class="guide-tip">
+          <div class="guide-tip-title">Pro Tips</div>
+          <div class="guide-tip-desc">
+            • Best results in good lighting facing you<br>
+            • If tracking is lost, move back to center frame<br>
+            • Use Smoothing ~0.6 for cinematic feel, ~0.2 for reactive feel<br>
+            • If the avatar looks off, try adjusting Head Size and Up/Down first<br>
+            • Restart Camera in the Camera tab if the feed freezes
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <input type="file" id="file-input" accept=".vrm,.glb">
+</div>
+
+<!-- Three.js r134 — GLTFLoader is in the core addons at this version -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let scene, camera, renderer;
+let ambientLight, dirLight, fillLight, rimLight;
+let currentVRM = null, neckMask = null;
+let vrmMeshes = []; // meshes with morph targets, with their morph name→index maps
+let avatarVisible = true, bgVisible = true, neckEnabled = false;
+let trayOpen = false;
+let cameraActive = false;
+let smoothX=0,smoothY=0,smoothRX=0,smoothRY=0,smoothRZ=0;
+
+const S = { scale:1.4, offsetY:0.1, depth:-0.5, sensitivity:1.2, smooth:0.4 };
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function setLoad(pct,msg){
+  document.getElementById('ld-bar').style.width=pct+'%';
+  document.getElementById('ld-msg').textContent=msg;
+}
+
+let toastTimer;
+function toast(msg,ok=false){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.style.borderColor=ok?'rgba(0,229,160,0.4)':'rgba(239,68,68,0.4)';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'),3200);
+}
+
+// ── Three.js init ──────────────────────────────────────────────────────────────
+function initThree(){
+  scene=new THREE.Scene();
+  const w=innerWidth,h=innerHeight;
+  camera=new THREE.PerspectiveCamera(35,w/h,0.01,20);
+  camera.position.set(0,0,5);
+
+  renderer=new THREE.WebGLRenderer({
+    canvas:document.getElementById('three-canvas'),
+    alpha:true,antialias:true,premultipliedAlpha:false
+  });
+  renderer.setSize(w,h);
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setClearColor(0,0);
+  renderer.outputEncoding=THREE.sRGBEncoding;
+
+  ambientLight=new THREE.AmbientLight(0xffffff,1.2); scene.add(ambientLight);
+  dirLight=new THREE.DirectionalLight(0xffffff,1.0); dirLight.position.set(1,2,3); scene.add(dirLight);
+  fillLight=new THREE.DirectionalLight(0xa0c4ff,0.4); fillLight.position.set(-3,0,2); scene.add(fillLight);
+  rimLight=new THREE.DirectionalLight(0x00e5a0,0.3); rimLight.position.set(0,-2,-3); scene.add(rimLight);
+
+  window.addEventListener('resize',()=>{
+    const w=innerWidth,h=innerHeight;
+    camera.aspect=w/h; camera.updateProjectionMatrix();
+    renderer.setSize(w,h);
+  });
+}
+
+// ── Lighting presets ───────────────────────────────────────────────────────────
+const PRESETS={
+  studio:{amb:1.2,dir:1.0,fill:0.4,rim:0.3,dirCol:'#ffffff',fillCol:'#a0c4ff',rimCol:'#00e5a0'},
+  warm:  {amb:1.0,dir:1.4,fill:0.3,rim:0.2,dirCol:'#ffcc88',fillCol:'#ff8844',rimCol:'#ffddaa'},
+  cool:  {amb:0.8,dir:0.9,fill:0.6,rim:0.5,dirCol:'#aaddff',fillCol:'#88bbff',rimCol:'#cceeff'},
+  night: {amb:0.3,dir:0.5,fill:0.15,rim:0.8,dirCol:'#0088ff',fillCol:'#002244',rimCol:'#00e5a0'},
+};
+
+function applyPreset(name){
+  const p=PRESETS[name]; if(!p) return;
+  ambientLight.intensity=p.amb; dirLight.intensity=p.dir;
+  fillLight.intensity=p.fill; rimLight.intensity=p.rim;
+  dirLight.color.set(p.dirCol); fillLight.color.set(p.fillCol); rimLight.color.set(p.rimCol);
+  setSlider('sl-ambient','vl-ambient',p.amb);
+  setSlider('sl-dirlight','vl-dirlight',p.dir);
+  setSlider('sl-filllight','vl-filllight',p.fill);
+  setSlider('sl-rimlight','vl-rimlight',p.rim);
+  document.getElementById('col-key').value=p.dirCol;
+  document.getElementById('col-fill').value=p.fillCol;
+  document.getElementById('col-rim').value=p.rimCol;
+}
+function setSlider(sid,vid,val){
+  const s=document.getElementById(sid);
+  if(s){s.value=val;document.getElementById(vid).textContent=parseFloat(val).toFixed(2);}
+}
+
+// ── Neck mask ──────────────────────────────────────────────────────────────────
+function buildNeckMask(){
+  if(neckMask){scene.remove(neckMask);neckMask=null;}
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const ctx=c.getContext('2d');
+  const g=ctx.createLinearGradient(0,0,0,256);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(0.4,'rgba(0,0,0,0.9)');
+  g.addColorStop(1,'rgba(0,0,0,1)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,256,256);
+  const mat=new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthTest:false,depthWrite:false});
+  neckMask=new THREE.Mesh(new THREE.PlaneGeometry(4,2),mat);
+  neckMask.renderOrder=999;
+  scene.add(neckMask);
+}
+
+function updateNeckMask(){
+  if(!neckMask||!currentVRM) return;
+  neckMask.position.set(smoothX,smoothY-0.6*S.scale,S.depth+0.01);
+  neckMask.scale.set(S.scale*1.6,S.scale,1);
+}
+
+// ── VRM Loading (fixed for r134 + VRM 0.x morph targets) ─────────────────────
+async function ensureVRMLib(){
+  if(window._vrmLibReady) return;
+  // Load @pixiv/three-vrm 0.6.x which is compatible with THREE r134
+  await new Promise(r=>{
+    const s=document.createElement('script');
+    s.src='https://unpkg.com/@pixiv/three-vrm@0.6.7/lib/three-vrm.js';
+    s.onload=r; s.onerror=r; document.head.appendChild(s);
+  });
+  window._vrmLibReady=true;
+}
+
+async function loadVRM(file){
+  document.getElementById('vrm-name').textContent='Loading…';
+  document.getElementById('vrm-sub').textContent=file.name;
+  try{
+    await ensureVRMLib();
+    if(!window.THREE.GLTFLoader){
+      throw new Error('GLTFLoader not available — check your connection');
+    }
+    const buf=await file.arrayBuffer();
+    const loader=new THREE.GLTFLoader();
+
+    // Register VRM plugin if available
+    if(window.THREE_VRM && THREE_VRM.VRMLoaderPlugin){
+      loader.register(p=>new THREE_VRM.VRMLoaderPlugin(p));
+    }
+
+    const gltf=await new Promise((ok,fail)=>loader.parse(buf,'',ok,fail));
+
+    // Remove old model
+    if(currentVRM){
+      const old=currentVRM.scene||currentVRM;
+      scene.remove(old);
+    }
+    currentVRM=null;
+    vrmMeshes=[];
+
+    let modelScene;
+
+    // Try VRM 0.x userData.vrm first
+    if(gltf.userData&&gltf.userData.vrm){
+      const v=gltf.userData.vrm;
+      if(THREE_VRM&&THREE_VRM.VRMUtils){
+        try{THREE_VRM.VRMUtils.removeUnnecessaryVertices(v.scene);}catch(e){}
+        try{THREE_VRM.VRMUtils.removeUnnecessaryJoints(v.scene);}catch(e){}
+      }
+      v.scene.rotation.y=Math.PI;
+      scene.add(v.scene);
+      currentVRM={scene:v.scene,vrm:v,isVRM:true};
+      modelScene=v.scene;
+      document.getElementById('vrm-sub').textContent='VRM · Full expression tracking';
+    } else {
+      // Fallback: raw GLTF/GLB
+      modelScene=gltf.scene||gltf.scenes[0];
+      modelScene.rotation.y=Math.PI;
+      scene.add(modelScene);
+      currentVRM={scene:modelScene,isPlainGLTF:true};
+      document.getElementById('vrm-sub').textContent='GLB · Morph target tracking';
+    }
+
+    // ── Extract morph targets from all meshes ─────────────────────────────
+    // This is the KEY fix for peng_visor_vest.vrm which has 50 ARKit morph
+    // targets on the mesh primitives but NO blendShapeGroups in VRM meta.
+    modelScene.traverse(obj=>{
+      if(obj.isMesh&&obj.morphTargetDictionary&&Object.keys(obj.morphTargetDictionary).length>0){
+        vrmMeshes.push({
+          mesh:obj,
+          dict:obj.morphTargetDictionary,
+          influences:obj.morphTargetInfluences
+        });
+      }
+    });
+    console.log(`[CARA AR] Found ${vrmMeshes.length} meshes with morph targets`);
+    if(vrmMeshes.length>0){
+      const names=Object.keys(vrmMeshes[0].dict);
+      console.log('[CARA AR] Morph targets:', names.join(', '));
+    }
+
+    const n=file.name.replace(/\.(vrm|glb)$/i,'');
+    document.getElementById('vrm-name').textContent=n;
+    document.getElementById('no-vrm').classList.add('gone');
+    if(neckEnabled) buildNeckMask();
+    toast('✓ '+n+' loaded!',true);
+  }catch(e){
+    console.error('[CARA AR] VRM load error:',e);
+    document.getElementById('vrm-name').textContent='Load failed';
+    document.getElementById('vrm-sub').textContent=e.message||'Try another file';
+    toast('Load failed: '+(e.message||'unknown error'));
+  }
+}
+
+// ── Apply morph targets directly on meshes ─────────────────────────────────────
+// Maps MediaPipe face landmark outputs → ARKit-compatible morph target names
+// that exist in peng_visor_vest.vrm
+function setMorph(name, value){
+  const clamped=Math.max(0,Math.min(1,value));
+  for(const m of vrmMeshes){
+    const idx=m.dict[name];
+    if(idx!==undefined){
+      m.influences[idx]=clamped;
+    }
+  }
+}
+
+function applyBlendShapes(b){
+  if(!currentVRM||vrmMeshes.length===0) return;
+
+  // Direct ARKit morph target names — these match peng_visor_vest.vrm exactly
+  setMorph('eyeBlinkLeft',   b.blinkL   ||0);
+  setMorph('eyeBlinkRight',  b.blinkR   ||0);
+  setMorph('jawOpen',        b.jawOpen  ||0);
+  setMorph('mouthSmileLeft', b.smileL   ||0);
+  setMorph('mouthSmileRight',b.smileR   ||0);
+  setMorph('browOuterUpLeft',b.browUpL  ||0);
+  setMorph('browOuterUpRight',b.browUpR ||0);
+  setMorph('browInnerUp',    b.browIn   ||0);
+  setMorph('browDownLeft',   b.browDnL  ||0);
+  setMorph('browDownRight',  b.browDnR  ||0);
+  setMorph('eyeSquintLeft',  b.squintL  ||0);
+  setMorph('eyeSquintRight', b.squintR  ||0);
+  setMorph('eyeWideLeft',    b.wideL    ||0);
+  setMorph('eyeWideRight',   b.wideR    ||0);
+  setMorph('mouthFrownLeft', b.frownL   ||0);
+  setMorph('mouthFrownRight',b.frownR   ||0);
+  setMorph('cheekPuff',      b.cheekPuff||0);
+  setMorph('mouthFunnel',    b.funnel   ||0);
+  setMorph('mouthClose',     b.mouthClose||0);
+  setMorph('tongueOut',      b.tongueOut||0);
+
+  // Eye look targets
+  setMorph('eyeLookUpLeft',   b.eyeUpL  ||0);
+  setMorph('eyeLookUpRight',  b.eyeUpR  ||0);
+  setMorph('eyeLookDownLeft', b.eyeDnL  ||0);
+  setMorph('eyeLookDownRight',b.eyeDnR  ||0);
+  setMorph('eyeLookInLeft',   b.eyeInL  ||0);
+  setMorph('eyeLookInRight',  b.eyeInR  ||0);
+  setMorph('eyeLookOutLeft',  b.eyeOutL ||0);
+  setMorph('eyeLookOutRight', b.eyeOutR ||0);
+}
+
+// ── Face tracking ──────────────────────────────────────────────────────────────
+async function ensureMediaPipe(){
+  if(window.FaceMesh) return;
+  await new Promise(r=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js';
+    s.onload=r;s.onerror=r;document.head.appendChild(s);
+  });
+  await new Promise(r=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1632090399/camera_utils.js';
+    s.onload=r;s.onerror=r;document.head.appendChild(s);
+  });
+}
+
+let faceMeshInst=null;
+
+async function startFaceTracking(video){
+  if(!window.FaceMesh){console.warn('[CARA AR] FaceMesh unavailable');return;}
+  faceMeshInst=new FaceMesh({
+    locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`
+  });
+  faceMeshInst.setOptions({
+    maxNumFaces:1,refineLandmarks:true,
+    minDetectionConfidence:0.5,minTrackingConfidence:0.5
+  });
+  faceMeshInst.onResults(onFaceResults);
+
+  if(window.Camera){
+    new Camera(video,{
+      onFrame:async()=>{if(faceMeshInst) await faceMeshInst.send({image:video});},
+      width:640,height:480,facingMode:'user'
+    }).start();
+  } else {
+    const poll=async()=>{
+      if(faceMeshInst&&video.readyState>=2) await faceMeshInst.send({image:video});
+      requestAnimationFrame(poll);
+    };
+    poll();
+  }
+}
+
+function dist3(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2);}
+
+function onFaceResults(results){
+  const dot=document.getElementById('sdot'),txt=document.getElementById('stxt');
+  if(!results.multiFaceLandmarks||!results.multiFaceLandmarks.length){
+    dot.className='sdot warn';txt.textContent='Detecting face…';return;
+  }
+  dot.className='sdot';txt.textContent='Tracking active';
+  const L=results.multiFaceLandmarks[0];
+  const sens=S.sensitivity,sm=S.smooth;
+
+  // Head position
+  const nose=L[4],fore=L[10],chin=L[152];
+  const eyeL=L[33],eyeR=L[263];
+  const cx=nose.x-0.5,cy=-(nose.y-0.5);
+  smoothX+=(cx*4-smoothX)*(1-sm);
+  smoothY+=(cy*4+S.offsetY-smoothY)*(1-sm);
+
+  // Head rotation
+  const yaw=(nose.x-(eyeL.x+eyeR.x)/2)*6*sens;
+  const pitch=((nose.y-(eyeL.y+eyeR.y)/2)/dist3(fore,chin)-0.5)*3*sens;
+  const roll=-(eyeR.y-eyeL.y)*8*sens;
+  smoothRY+=(-yaw-smoothRY)*(1-sm);
+  smoothRX+=(-pitch-smoothRX)*(1-sm);
+  smoothRZ+=(roll-smoothRZ)*(1-sm);
+
+  // ── Blink ────────────────────────────────────────────────────────────
+  const eHL=dist3(L[159],L[145]),eWL=dist3(L[133],L[33]);
+  const eHR=dist3(L[386],L[374]),eWR=dist3(L[362],L[263]);
+  const blinkL=Math.max(0,1-(eHL/eWL)*5.5);
+  const blinkR=Math.max(0,1-(eHR/eWR)*5.5);
+
+  // Wide eyes (surprise)
+  const wideL=Math.max(0,(eHL/eWL)*5.5-1.2)*1.5;
+  const wideR=Math.max(0,(eHR/eWR)*5.5-1.2)*1.5;
+
+  // Squint (narrow eyes)
+  const squintL=blinkL>0.3?blinkL*0.4:0;
+  const squintR=blinkR>0.3?blinkR*0.4:0;
+
+  // ── Jaw / Mouth ───────────────────────────────────────────────────────
+  const mH=dist3(L[13],L[14]),mW=dist3(L[61],L[291]);
+  const jawOpen=Math.min(1,mH/(mW*0.38)*sens);
+  const mouthClose=jawOpen<0.1?Math.min(1,(0.1-jawOpen)*8):0;
+  const funnel=jawOpen>0.4?Math.min(1,(jawOpen-0.4)*2.5):0;
+
+  // Smile — corners going up relative to lip center
+  const smileL=Math.min(1,Math.max(0,(L[2].y-L[61].y)*7*sens));
+  const smileR=Math.min(1,Math.max(0,(L[2].y-L[291].y)*7*sens));
+
+  // Frown — corners going down
+  const frownL=Math.min(1,Math.max(0,(L[61].y-L[2].y)*7*sens));
+  const frownR=Math.min(1,Math.max(0,(L[291].y-L[2].y)*7*sens));
+
+  // Cheek puff proxy — mouth width increase
+  const cheekPuff=Math.min(1,Math.max(0,(mW-0.12)*5));
+
+  // ── Brows ─────────────────────────────────────────────────────────────
+  const browUpL=Math.min(1,Math.max(0,(L[159].y-L[70].y-0.025)*18*sens));
+  const browUpR=Math.min(1,Math.max(0,(L[386].y-L[300].y-0.025)*18*sens));
+  const browIn=Math.min(browUpL,browUpR);
+  const browDnL=Math.min(1,Math.max(0,(L[70].y-L[159].y+0.01)*12*sens));
+  const browDnR=Math.min(1,Math.max(0,(L[300].y-L[386].y+0.01)*12*sens));
+
+  // ── Eye look direction (refined landmarks) ────────────────────────────
+  let eyeUpL=0,eyeDnL=0,eyeInL=0,eyeOutL=0;
+  let eyeUpR=0,eyeDnR=0,eyeInR=0,eyeOutR=0;
+  if(L[468]){ // iris landmarks available with refineLandmarks:true
+    const iris=L[468]; // left iris center
+    const irisR=L[473]; // right iris center
+    const lEyeC={x:(L[33].x+L[263].x)/2,y:(L[159].y+L[145].y)/2};
+    eyeUpL=Math.max(0,(lEyeC.y-iris.y)*12);
+    eyeDnL=Math.max(0,(iris.y-lEyeC.y)*12);
+    eyeInL=Math.max(0,(iris.x-lEyeC.x)*10);
+    eyeOutL=Math.max(0,(lEyeC.x-iris.x)*10);
+    eyeUpR=Math.max(0,(lEyeC.y-irisR.y)*12);
+    eyeDnR=Math.max(0,(irisR.y-lEyeC.y)*12);
+    eyeInR=Math.max(0,(lEyeC.x-irisR.x)*10);
+    eyeOutR=Math.max(0,(irisR.x-lEyeC.x)*10);
+  }
+
+  applyBlendShapes({
+    blinkL,blinkR,jawOpen,mouthClose,funnel,
+    smileL,smileR,frownL,frownR,cheekPuff,
+    browUpL,browUpR,browIn,browDnL,browDnR,
+    squintL,squintR,wideL,wideR,
+    eyeUpL,eyeDnL,eyeInL,eyeOutL,
+    eyeUpR,eyeDnR,eyeInR,eyeOutR,
+    tongueOut:0 // not detectable via MediaPipe landmarks
+  });
+}
+
+// ── Render loop ────────────────────────────────────────────────────────────────
+function loop(){
+  requestAnimationFrame(loop);
+  if(currentVRM&&avatarVisible){
+    const vs=currentVRM.scene;
+    vs.position.set(smoothX,smoothY,S.depth);
+    vs.rotation.set(smoothRX,smoothRY,smoothRZ);
+    vs.scale.setScalar(S.scale);
+    vs.visible=true;
+    updateNeckMask();
+  } else if(currentVRM){
+    currentVRM.scene.visible=false;
+  }
+  renderer.render(scene,camera);
+}
+
+// ── Camera ─────────────────────────────────────────────────────────────────────
+async function startCamera(){
+  const video=document.getElementById('video');
+  const block=document.getElementById('cam-status-block');
+  const dot=document.getElementById('cam-sbdot');
+  const txt=document.getElementById('cam-stxt');
+  const sub=document.getElementById('cam-ssub');
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false
+    });
+    video.srcObject=stream;
+    await new Promise(r=>video.addEventListener('loadedmetadata',r,{once:true}));
+    video.play();
+    cameraActive=true;
+    block.classList.remove('warn');
+    dot.className='csb-dot';
+    txt.textContent='Camera active';
+    sub.textContent='Front camera · Face tracking on';
+    return true;
+  }catch(e){
+    block.classList.add('warn');
+    dot.className='csb-dot warn';
+    txt.textContent='Camera access denied';
+    sub.textContent='Allow camera access in browser settings';
+    toast('Camera denied. Check your browser settings.');
+    return false;
+  }
+}
+
+// ── Photo ──────────────────────────────────────────────────────────────────────
+function takePhoto(){
+  const fl=document.getElementById('flash');
+  fl.style.opacity='1';setTimeout(()=>fl.style.opacity='0',150);
+  const w=innerWidth,h=innerHeight;
+  const out=document.createElement('canvas'); out.width=w; out.height=h;
+  const ctx=out.getContext('2d');
+  const v=document.getElementById('video');
+  ctx.save();ctx.scale(-1,1);ctx.drawImage(v,-w,0,w,h);ctx.restore();
+  ctx.drawImage(document.getElementById('three-canvas'),0,0,w,h);
+  const a=document.createElement('a');
+  a.download='cara-ar-'+Date.now()+'.png';
+  a.href=out.toDataURL('image/png');a.click();
+  toast('Photo saved!',true);
+}
+
+// ── Tray ───────────────────────────────────────────────────────────────────────
+function openTray(tab){
+  trayOpen=true;
+  document.getElementById('tray').classList.add('open');
+  if(tab) switchTab(tab);
+}
+function closeTray(){
+  trayOpen=false;
+  document.getElementById('tray').classList.remove('open');
+}
+function toggleTray(tab){trayOpen?closeTray():openTray(tab);}
+
+function switchTab(name){
+  document.querySelectorAll('.ttab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.tpanel').forEach(p=>p.classList.toggle('active',p.id==='tp-'+name));
+}
+
+function syncToggle(id,state){document.getElementById(id).classList.toggle('on',state);}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+(async()=>{
+  setLoad(5,'Initialising 3D…');
+  initThree(); loop();
+
+  setLoad(20,'Loading face tracker…');
+  await ensureMediaPipe();
+  setLoad(60,'Ready…');
+
+  // Show splash
+  setTimeout(()=>{
+    document.getElementById('loading').classList.add('out');
+    setTimeout(()=>{document.getElementById('loading').style.display='none';},550);
+    document.getElementById('splash').classList.remove('gone');
+  },900);
+
+  // ── Splash START ──
+  document.getElementById('start-btn').addEventListener('click',async()=>{
+    document.getElementById('splash').classList.add('gone');
+    document.getElementById('loading').style.display='flex';
+    document.getElementById('loading').classList.remove('out');
+    setLoad(70,'Requesting camera…');
+    const ok=await startCamera();
+    setLoad(90,'Starting face tracking…');
+    if(ok) await startFaceTracking(document.getElementById('video'));
+    setLoad(100,'All systems go');
+    setTimeout(()=>{
+      document.getElementById('loading').classList.add('out');
+      setTimeout(()=>{document.getElementById('loading').style.display='none';},550);
+      document.getElementById('ui').classList.remove('gone');
+    },400);
+  });
+
+  // ── File import ──
+  const openFiles=()=>document.getElementById('file-input').click();
+  document.getElementById('btn-import-main').addEventListener('click',openFiles);
+  document.getElementById('btn-import-quick').addEventListener('click',()=>{openFiles();closeTray();});
+  document.getElementById('file-input').addEventListener('change',async e=>{
+    const f=e.target.files[0]; if(!f) return;
+    e.target.value='';
+    closeTray();
+    await loadVRM(f);
+  });
+
+  // ── Tray ──
+  document.getElementById('btn-open-tray').addEventListener('click',()=>toggleTray('tracking'));
+  document.getElementById('btn-light-quick').addEventListener('click',()=>openTray('light'));
+  document.querySelectorAll('.ttab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
+
+  // ── Top bar ──
+  document.getElementById('btn-help').addEventListener('click',()=>{
+    document.getElementById('guide-modal').classList.remove('gone');
+  });
+  document.getElementById('guide-close-btn').addEventListener('click',()=>{
+    document.getElementById('guide-modal').classList.add('gone');
+  });
+  document.getElementById('btn-hide-avatar').addEventListener('click',()=>{
+    avatarVisible=!avatarVisible;
+    document.getElementById('btn-hide-avatar').classList.toggle('lit',!avatarVisible);
+    syncToggle('tog-avatar',avatarVisible);
+  });
+  document.getElementById('btn-bg').addEventListener('click',()=>{
+    bgVisible=!bgVisible;
+    document.getElementById('video').style.opacity=bgVisible?'1':'0';
+    document.getElementById('btn-bg').classList.toggle('lit',!bgVisible);
+    syncToggle('tog-bg',bgVisible);
+  });
+
+  // ── Neck mask ──
+  const setNeck=on=>{
+    neckEnabled=on;
+    document.getElementById('btn-neck').classList.toggle('active',on);
+    syncToggle('tog-neck',on);
+    if(on&&currentVRM) buildNeckMask();
+    else if(neckMask){scene.remove(neckMask);neckMask=null;}
+  };
+  document.getElementById('btn-neck').addEventListener('click',()=>setNeck(!neckEnabled));
+  document.getElementById('tog-neck').addEventListener('click',()=>setNeck(!neckEnabled));
+
+  // ── Camera panel toggles ──
+  document.getElementById('tog-bg').addEventListener('click',()=>{
+    bgVisible=!bgVisible;
+    document.getElementById('video').style.opacity=bgVisible?'1':'0';
+    document.getElementById('btn-bg').classList.toggle('lit',!bgVisible);
+    syncToggle('tog-bg',bgVisible);
+  });
+  document.getElementById('tog-avatar').addEventListener('click',()=>{
+    avatarVisible=!avatarVisible;
+    document.getElementById('btn-hide-avatar').classList.toggle('lit',!avatarVisible);
+    syncToggle('tog-avatar',avatarVisible);
+  });
+  document.getElementById('btn-restart-cam').addEventListener('click',async()=>{
+    const v=document.getElementById('video');
+    if(v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}
+    cameraActive=false;
+    await startCamera();
+    await startFaceTracking(v);
+    toast('Camera restarted',true);
+  });
+
+  // ── Shutter ──
+  document.getElementById('btn-shutter').addEventListener('click',takePhoto);
+
+  // ── Lighting presets ──
+  document.querySelectorAll('.preset-card').forEach(el=>{
+    el.addEventListener('click',()=>{
+      document.querySelectorAll('.preset-card').forEach(x=>x.classList.remove('sel'));
+      el.classList.add('sel');
+      applyPreset(el.dataset.preset);
+    });
+  });
+
+  // ── Lighting sliders ──
+  [
+    ['sl-ambient','vl-ambient',v=>{ambientLight.intensity=v;}],
+    ['sl-dirlight','vl-dirlight',v=>{dirLight.intensity=v;}],
+    ['sl-filllight','vl-filllight',v=>{fillLight.intensity=v;}],
+    ['sl-rimlight','vl-rimlight',v=>{rimLight.intensity=v;}],
+  ].forEach(([sid,vid,fn])=>{
+    document.getElementById(sid).addEventListener('input',e=>{
+      const v=parseFloat(e.target.value);
+      document.getElementById(vid).textContent=v.toFixed(2);
+      fn(v);
+    });
+  });
+  document.getElementById('col-key').addEventListener('input',e=>dirLight.color.set(e.target.value));
+  document.getElementById('col-fill').addEventListener('input',e=>fillLight.color.set(e.target.value));
+  document.getElementById('col-rim').addEventListener('input',e=>rimLight.color.set(e.target.value));
+
+  // ── Tracking sliders ──
+  [
+    ['sl-scale','vl-scale','scale'],
+    ['sl-offsety','vl-offsety','offsetY'],
+    ['sl-depth','vl-depth','depth'],
+    ['sl-sens','vl-sens','sensitivity'],
+    ['sl-smooth','vl-smooth','smooth'],
+  ].forEach(([sid,vid,key])=>{
+    document.getElementById(sid).addEventListener('input',e=>{
+      const v=parseFloat(e.target.value);
+      S[key]=v;
+      document.getElementById(vid).textContent=v.toFixed(2);
+    });
+  });
+
+  // ── Swipe tray to close ──
+  let startY=0;
+  document.getElementById('tray').addEventListener('touchstart',e=>{startY=e.touches[0].clientY;},{passive:true});
+  document.getElementById('tray').addEventListener('touchend',e=>{
+    if(e.changedTouches[0].clientY-startY>60) closeTray();
+  },{passive:true});
+
+})();
+</script>
+</body>
+</html>
