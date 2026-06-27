@@ -955,12 +955,17 @@ async function ensureVRMLib(){
 async function loadVRM(file){
   document.getElementById('vrm-name').textContent='Loading…';
   document.getElementById('vrm-sub').textContent=file.name;
+
+  // Show progress for large files
+  toast('Loading '+file.name+' ('+Math.round(file.size/1024/1024)+'MB)…', true);
+
+  let blobURL = null;
   try{
     await ensureVRMLib();
     if(!window.THREE.GLTFLoader){
       throw new Error('GLTFLoader not available — check your connection');
     }
-    const buf=await file.arrayBuffer();
+
     const loader=new THREE.GLTFLoader();
 
     // Register VRM plugin if available
@@ -968,7 +973,11 @@ async function loadVRM(file){
       loader.register(p=>new THREE_VRM.VRMLoaderPlugin(p));
     }
 
-    const gltf=await new Promise((ok,fail)=>loader.parse(buf,'',ok,fail));
+    // ── iOS Safari fix: use Blob URL instead of arrayBuffer ──────────────
+    // arrayBuffer() on a 56MB file crashes Safari due to memory doubling.
+    // A Blob URL streams directly from disk, bypassing the memory spike.
+    blobURL = URL.createObjectURL(file);
+    const gltf = await new Promise((ok, fail) => loader.load(blobURL, ok, null, fail));
 
     // Remove old model
     if(currentVRM){
@@ -1023,11 +1032,13 @@ async function loadVRM(file){
     document.getElementById('vrm-name').textContent=n;
     document.getElementById('no-vrm').classList.add('gone');
     if(neckEnabled) buildNeckMask();
+    if(blobURL) URL.revokeObjectURL(blobURL);
     toast('✓ '+n+' loaded!',true);
   }catch(e){
+    if(blobURL) URL.revokeObjectURL(blobURL);
     console.error('[CARA AR] VRM load error:',e);
     document.getElementById('vrm-name').textContent='Load failed';
-    document.getElementById('vrm-sub').textContent=e.message||'Try another file';
+    document.getElementById('vrm-sub').textContent=e.message||'Try a different file';
     toast('Load failed: '+(e.message||'unknown error'));
   }
 }
