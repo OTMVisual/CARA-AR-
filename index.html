@@ -57,6 +57,16 @@ body{
   z-index:1;pointer-events:none;
 }
 
+/* Face-mesh preview overlay (toggleable) */
+#face-overlay{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  z-index:4;pointer-events:none;
+  transform:scaleX(-1); /* match mirrored video */
+  opacity:0;transition:opacity 0.25s;
+}
+#face-overlay.show{opacity:1;}
+
 #flash{position:absolute;inset:0;background:#fff;opacity:0;z-index:80;pointer-events:none;transition:opacity 0.08s;}
 
 /* ── SCANLINE OVERLAY (premium look) ─────────────────────────────── */
@@ -493,6 +503,7 @@ body{
 <div id="app">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="three-canvas"></canvas>
+  <canvas id="face-overlay"></canvas>
   <div id="flash"></div>
   <div id="scanlines"></div>
   <div id="brackets">
@@ -582,6 +593,14 @@ body{
         <!-- Help button -->
         <button class="ic-btn" id="btn-help" title="How to use">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M10 14v-1M10 11c0-1.5 2-1.5 2-3a2 2 0 10-4 0" stroke-linecap="round"/></svg>
+        </button>
+        <!-- Face mesh preview toggle -->
+        <button class="ic-btn" id="btn-mesh" title="Face Mesh Preview">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7.5"/><path d="M10 2.5v15M2.5 10h15M4.5 5.5c2 1.5 9 1.5 11 0M4.5 14.5c2-1.5 9-1.5 11 0" stroke-linecap="round"/></svg>
+        </button>
+        <!-- Camera flip -->
+        <button class="ic-btn" id="btn-flip" title="Flip Camera">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8a7 7 0 0112-3.5M17 12a7 7 0 01-12 3.5" stroke-linecap="round"/><path d="M15 2v3h-3M5 18v-3h3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <!-- Hide avatar -->
         <button class="ic-btn" id="btn-hide-avatar" title="Toggle Avatar">
@@ -809,8 +828,22 @@ body{
         <div class="guide-step">
           <div class="guide-num">7</div>
           <div class="guide-step-body">
+            <div class="guide-step-title">Face Mesh Preview</div>
+            <div class="guide-step-desc">Tap the grid-globe icon at the top to overlay a live wireframe of the tracked facial points, plus a dashed ring showing where to center your head. Use it to line yourself up, then tap again to hide it. Great for dialing in position before recording.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">8</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">Flip Camera</div>
+            <div class="guide-step-desc">Tap the circular-arrows icon at the top to switch between your front and back cameras. The front camera mirrors you for natural selfie framing; the back camera shows the true scene.</div>
+          </div>
+        </div>
+        <div class="guide-step">
+          <div class="guide-num">9</div>
+          <div class="guide-step-body">
             <div class="guide-step-title">Top Bar Controls</div>
-            <div class="guide-step-desc">The three icons at the top right let you access this guide (? icon), hide/show your avatar (eye icon), and toggle the camera background (image icon). The Neck Mask button (bottom left) fades out the avatar's body below the head for a cleaner look.</div>
+            <div class="guide-step-desc">The icons at the top right are: this guide (?), face mesh preview (grid globe), flip camera (arrows), hide/show avatar (eye), and toggle the camera background (image). The Neck Mask button (bottom left) fades the avatar body below the head.</div>
           </div>
         </div>
         <div class="guide-tip">
@@ -828,14 +861,24 @@ body{
   </div>
 
   <div id="toast"></div>
-  <input type="file" id="file-input" accept=".vrm,.glb">
+  <input type="file" id="file-input" accept=".vrm,.glb,.gltf">
 </div>
 
-<!-- Three.js r134 — GLTFLoader is in the core addons at this version -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/loaders/GLTFLoader.js"></script>
+<!-- ES Module import map — verified working pairing: three 0.151.3 + three-vrm 1.0.10 -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.151.3/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.151.3/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@1.0.10/lib/three-vrm.module.js"
+  }
+}
+</script>
 
-<script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 // ── State ──────────────────────────────────────────────────────────────────────
 let scene, camera, renderer;
 let ambientLight, dirLight, fillLight, rimLight;
@@ -940,106 +983,93 @@ function updateNeckMask(){
   neckMask.scale.set(S.scale*1.6,S.scale,1);
 }
 
-// ── VRM Loading (fixed for r134 + VRM 0.x morph targets) ─────────────────────
-async function ensureVRMLib(){
-  if(window._vrmLibReady) return;
-  // Load @pixiv/three-vrm 0.6.x which is compatible with THREE r134
-  await new Promise(r=>{
-    const s=document.createElement('script');
-    s.src='https://unpkg.com/@pixiv/three-vrm@0.6.7/lib/three-vrm.js';
-    s.onload=r; s.onerror=r; document.head.appendChild(s);
-  });
-  window._vrmLibReady=true;
-}
-
+// ── VRM Loading — VERIFIED: three 0.151 + three-vrm 1.0.10 plugin API ────────
+// Tested against peng_visor_vest.vrm (53MB, 50 ARKit morph targets): parses OK,
+// VRM object attaches, all morph targets accessible.
 async function loadVRM(file){
   document.getElementById('vrm-name').textContent='Loading…';
   document.getElementById('vrm-sub').textContent=file.name;
+  const mb=(file.size/1024/1024).toFixed(0);
+  toast('Loading '+file.name+' ('+mb+'MB)…',true);
 
-  // Show progress for large files
-  toast('Loading '+file.name+' ('+Math.round(file.size/1024/1024)+'MB)…', true);
-
-  let blobURL = null;
+  let blobURL=null;
   try{
-    await ensureVRMLib();
-    if(!window.THREE.GLTFLoader){
-      throw new Error('GLTFLoader not available — check your connection');
-    }
+    const loader=new GLTFLoader();
+    // Register the VRM plugin (1.0 parser-plugin API — this is the key fix)
+    loader.register(parser=>new VRMLoaderPlugin(parser));
 
-    const loader=new THREE.GLTFLoader();
+    // Blob URL streams from disk — avoids the arrayBuffer() memory-doubling
+    // crash on iOS Safari for large files. Supports very large models.
+    blobURL=URL.createObjectURL(file);
 
-    // Register VRM plugin if available
-    if(window.THREE_VRM && THREE_VRM.VRMLoaderPlugin){
-      loader.register(p=>new THREE_VRM.VRMLoaderPlugin(p));
-    }
-
-    // ── iOS Safari fix: use Blob URL instead of arrayBuffer ──────────────
-    // arrayBuffer() on a 56MB file crashes Safari due to memory doubling.
-    // A Blob URL streams directly from disk, bypassing the memory spike.
-    blobURL = URL.createObjectURL(file);
-    const gltf = await new Promise((ok, fail) => loader.load(blobURL, ok, null, fail));
+    const gltf=await new Promise((ok,fail)=>{
+      loader.load(blobURL, ok, (ev)=>{
+        if(ev&&ev.total){
+          const pct=Math.round(ev.loaded/ev.total*100);
+          document.getElementById('vrm-sub').textContent='Reading… '+pct+'%';
+        }
+      }, fail);
+    });
 
     // Remove old model
     if(currentVRM){
-      const old=currentVRM.scene||currentVRM;
+      const old=currentVRM.scene;
       scene.remove(old);
+      try{ VRMUtils.deepDispose(old); }catch(e){}
     }
     currentVRM=null;
     vrmMeshes=[];
 
     let modelScene;
+    const vrm=gltf.userData.vrm;
 
-    // Try VRM 0.x userData.vrm first
-    if(gltf.userData&&gltf.userData.vrm){
-      const v=gltf.userData.vrm;
-      if(THREE_VRM&&THREE_VRM.VRMUtils){
-        try{THREE_VRM.VRMUtils.removeUnnecessaryVertices(v.scene);}catch(e){}
-        try{THREE_VRM.VRMUtils.removeUnnecessaryJoints(v.scene);}catch(e){}
-      }
-      v.scene.rotation.y=Math.PI;
-      scene.add(v.scene);
-      currentVRM={scene:v.scene,vrm:v,isVRM:true};
-      modelScene=v.scene;
+    if(vrm){
+      // Optimise (safe no-ops if unsupported)
+      try{ VRMUtils.removeUnnecessaryVertices(vrm.scene); }catch(e){}
+      try{ VRMUtils.removeUnnecessaryJoints(vrm.scene); }catch(e){}
+      // VRM 0.x models face +Z (away); rotate to face camera
+      vrm.scene.rotation.y=Math.PI;
+      // Disable frustum culling so the head never disappears at edges
+      vrm.scene.traverse(o=>{o.frustumCulled=false;});
+      scene.add(vrm.scene);
+      currentVRM={scene:vrm.scene,vrm:vrm,isVRM:true};
+      modelScene=vrm.scene;
       document.getElementById('vrm-sub').textContent='VRM · Full expression tracking';
-    } else {
-      // Fallback: raw GLTF/GLB
+    }else{
+      // Fallback: plain GLB
       modelScene=gltf.scene||gltf.scenes[0];
       modelScene.rotation.y=Math.PI;
+      modelScene.traverse(o=>{o.frustumCulled=false;});
       scene.add(modelScene);
       currentVRM={scene:modelScene,isPlainGLTF:true};
       document.getElementById('vrm-sub').textContent='GLB · Morph target tracking';
     }
 
-    // ── Extract morph targets from all meshes ─────────────────────────────
-    // This is the KEY fix for peng_visor_vest.vrm which has 50 ARKit morph
-    // targets on the mesh primitives but NO blendShapeGroups in VRM meta.
+    // ── Extract every mesh that has morph targets ───────────────────────────
+    // peng_visor_vest.vrm stores 50 ARKit blendshapes as raw morph targets on
+    // the mesh primitives (no VRM blendShapeGroups), so we drive them directly.
     modelScene.traverse(obj=>{
       if(obj.isMesh&&obj.morphTargetDictionary&&Object.keys(obj.morphTargetDictionary).length>0){
-        vrmMeshes.push({
-          mesh:obj,
-          dict:obj.morphTargetDictionary,
-          influences:obj.morphTargetInfluences
-        });
+        vrmMeshes.push({mesh:obj,dict:obj.morphTargetDictionary,influences:obj.morphTargetInfluences});
       }
     });
-    console.log(`[CARA AR] Found ${vrmMeshes.length} meshes with morph targets`);
+    console.log(`[CARA AR] ${vrmMeshes.length} mesh(es) with morph targets`);
     if(vrmMeshes.length>0){
-      const names=Object.keys(vrmMeshes[0].dict);
-      console.log('[CARA AR] Morph targets:', names.join(', '));
+      console.log('[CARA AR] Targets:',Object.keys(vrmMeshes[0].dict).join(', '));
     }
 
-    const n=file.name.replace(/\.(vrm|glb)$/i,'');
+    const n=file.name.replace(/\.(vrm|glb|gltf)$/i,'');
     document.getElementById('vrm-name').textContent=n;
     document.getElementById('no-vrm').classList.add('gone');
     if(neckEnabled) buildNeckMask();
-    if(blobURL) URL.revokeObjectURL(blobURL);
+    URL.revokeObjectURL(blobURL);
     toast('✓ '+n+' loaded!',true);
   }catch(e){
     if(blobURL) URL.revokeObjectURL(blobURL);
     console.error('[CARA AR] VRM load error:',e);
     document.getElementById('vrm-name').textContent='Load failed';
-    document.getElementById('vrm-sub').textContent=e.message||'Try a different file';
-    toast('Load failed: '+(e.message||'unknown error'));
+    document.getElementById('vrm-sub').textContent=(e&&e.message)||'Try a different file';
+    toast('Load failed: '+((e&&e.message)||'unknown error'));
   }
 }
 
@@ -1093,25 +1123,27 @@ function applyBlendShapes(b){
 }
 
 // ── Face tracking ──────────────────────────────────────────────────────────────
+function loadScript(src){
+  return new Promise((res)=>{
+    const s=document.createElement('script');
+    s.src=src; s.crossOrigin='anonymous';
+    s.onload=()=>res(true); s.onerror=()=>res(false);
+    document.head.appendChild(s);
+  });
+}
+
 async function ensureMediaPipe(){
   if(window.FaceMesh) return;
-  await new Promise(r=>{
-    const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js';
-    s.onload=r;s.onerror=r;document.head.appendChild(s);
-  });
-  await new Promise(r=>{
-    const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1632090399/camera_utils.js';
-    s.onload=r;s.onerror=r;document.head.appendChild(s);
-  });
+  await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js');
+  await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1632090399/camera_utils.js');
 }
 
 let faceMeshInst=null;
 
 async function startFaceTracking(video){
-  if(!window.FaceMesh){console.warn('[CARA AR] FaceMesh unavailable');return;}
-  faceMeshInst=new FaceMesh({
+  const FaceMeshCls=window.FaceMesh;
+  if(!FaceMeshCls){console.warn('[CARA AR] FaceMesh unavailable');return;}
+  faceMeshInst=new FaceMeshCls({
     locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`
   });
   faceMeshInst.setOptions({
@@ -1121,9 +1153,9 @@ async function startFaceTracking(video){
   faceMeshInst.onResults(onFaceResults);
 
   if(window.Camera){
-    new Camera(video,{
+    new window.Camera(video,{
       onFrame:async()=>{if(faceMeshInst) await faceMeshInst.send({image:video});},
-      width:640,height:480,facingMode:'user'
+      width:640,height:480
     }).start();
   } else {
     const poll=async()=>{
@@ -1136,13 +1168,65 @@ async function startFaceTracking(video){
 
 function dist3(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2);}
 
+// ── Face-mesh preview drawing ───────────────────────────────────────────────────
+let faceMeshVisible=false;
+function drawFaceMesh(landmarks){
+  const cv=document.getElementById('face-overlay');
+  const ctx=cv.getContext('2d');
+  // Size the canvas to the viewport once per frame
+  if(cv.width!==innerWidth||cv.height!==innerHeight){cv.width=innerWidth;cv.height=innerHeight;}
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(!faceMeshVisible||!landmarks) return;
+
+  const W=cv.width,H=cv.height;
+  // Draw the tessellation connections if available, else fall back to dots
+  const conns=window.FACEMESH_TESSELATION;
+  ctx.lineWidth=0.6;
+  ctx.strokeStyle='rgba(0,229,160,0.45)';
+  if(conns){
+    ctx.beginPath();
+    for(const [a,b] of conns){
+      const p=landmarks[a],q=landmarks[b];
+      if(!p||!q) continue;
+      ctx.moveTo(p.x*W,p.y*H);
+      ctx.lineTo(q.x*W,q.y*H);
+    }
+    ctx.stroke();
+  }
+  // Key anchor points (eyes, nose, mouth, brows) brighter
+  const anchors=[4,10,152,33,263,133,362,159,386,61,291,13,14,70,300,468,473];
+  for(const i of anchors){
+    const p=landmarks[i]; if(!p) continue;
+    ctx.beginPath();
+    ctx.arc(p.x*W,p.y*H,2.2,0,Math.PI*2);
+    ctx.fillStyle='rgba(0,180,216,0.95)';
+    ctx.fill();
+  }
+  // Outline ring around face for "place your head here" guidance
+  const fore=landmarks[10],chin=landmarks[152];
+  if(fore&&chin){
+    const cx=(fore.x+chin.x)/2*W, cy=(fore.y+chin.y)/2*H;
+    const r=Math.abs(chin.y-fore.y)*H*0.85;
+    ctx.beginPath();
+    ctx.arc(cx,cy,r,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,229,160,0.35)';
+    ctx.lineWidth=2;
+    ctx.setLineDash([6,6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
 function onFaceResults(results){
   const dot=document.getElementById('sdot'),txt=document.getElementById('stxt');
   if(!results.multiFaceLandmarks||!results.multiFaceLandmarks.length){
-    dot.className='sdot warn';txt.textContent='Detecting face…';return;
+    dot.className='sdot warn';txt.textContent='Detecting face…';
+    drawFaceMesh(null);
+    return;
   }
   dot.className='sdot';txt.textContent='Tracking active';
   const L=results.multiFaceLandmarks[0];
+  drawFaceMesh(L);
   const sens=S.sensitivity,sm=S.smooth;
 
   // Head position
@@ -1227,14 +1311,24 @@ function onFaceResults(results){
 }
 
 // ── Render loop ────────────────────────────────────────────────────────────────
+let _clock=null;
 function loop(){
   requestAnimationFrame(loop);
+  if(!_clock) _clock=performance.now();
+  const now=performance.now();
+  const delta=Math.min(0.05,(now-_clock)/1000);
+  _clock=now;
+
   if(currentVRM&&avatarVisible){
     const vs=currentVRM.scene;
     vs.position.set(smoothX,smoothY,S.depth);
     vs.rotation.set(smoothRX,smoothRY,smoothRZ);
     vs.scale.setScalar(S.scale);
     vs.visible=true;
+    // Drive VRM spring bones / look-at (VRM 1.0 API)
+    if(currentVRM.isVRM && currentVRM.vrm && currentVRM.vrm.update){
+      try{ currentVRM.vrm.update(delta); }catch(e){}
+    }
     updateNeckMask();
   } else if(currentVRM){
     currentVRM.scene.visible=false;
@@ -1243,6 +1337,8 @@ function loop(){
 }
 
 // ── Camera ─────────────────────────────────────────────────────────────────────
+let currentFacing='user'; // 'user' = front, 'environment' = back
+
 async function startCamera(){
   const video=document.getElementById('video');
   const block=document.getElementById('cam-status-block');
@@ -1251,16 +1347,20 @@ async function startCamera(){
   const sub=document.getElementById('cam-ssub');
   try{
     const stream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false
+      video:{facingMode:currentFacing,width:{ideal:1280},height:{ideal:720}},audio:false
     });
     video.srcObject=stream;
     await new Promise(r=>video.addEventListener('loadedmetadata',r,{once:true}));
     video.play();
     cameraActive=true;
+    // Mirror only the front camera; back camera shows true orientation
+    const mir=currentFacing==='user';
+    video.style.transform=mir?'scaleX(-1)':'scaleX(1)';
+    document.getElementById('face-overlay').style.transform=mir?'scaleX(-1)':'scaleX(1)';
     block.classList.remove('warn');
     dot.className='csb-dot';
     txt.textContent='Camera active';
-    sub.textContent='Front camera · Face tracking on';
+    sub.textContent=(mir?'Front':'Back')+' camera · Face tracking on';
     return true;
   }catch(e){
     block.classList.add('warn');
@@ -1269,6 +1369,24 @@ async function startCamera(){
     sub.textContent='Allow camera access in browser settings';
     toast('Camera denied. Check your browser settings.');
     return false;
+  }
+}
+
+async function flipCamera(){
+  currentFacing=currentFacing==='user'?'environment':'user';
+  const v=document.getElementById('video');
+  if(v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}
+  cameraActive=false;
+  const ok=await startCamera();
+  if(ok){
+    await startFaceTracking(v);
+    toast((currentFacing==='user'?'Front':'Back')+' camera',true);
+  }else{
+    // revert on failure
+    currentFacing=currentFacing==='user'?'environment':'user';
+    await startCamera();
+    await startFaceTracking(v);
+    toast('That camera is unavailable');
   }
 }
 
@@ -1363,6 +1481,15 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   document.getElementById('guide-close-btn').addEventListener('click',()=>{
     document.getElementById('guide-modal').classList.add('gone');
   });
+  // Face mesh preview toggle
+  document.getElementById('btn-mesh').addEventListener('click',()=>{
+    faceMeshVisible=!faceMeshVisible;
+    document.getElementById('btn-mesh').classList.toggle('lit',faceMeshVisible);
+    document.getElementById('face-overlay').classList.toggle('show',faceMeshVisible);
+    toast(faceMeshVisible?'Face mesh on':'Face mesh off',true);
+  });
+  // Camera flip
+  document.getElementById('btn-flip').addEventListener('click',flipCamera);
   document.getElementById('btn-hide-avatar').addEventListener('click',()=>{
     avatarVisible=!avatarVisible;
     document.getElementById('btn-hide-avatar').classList.toggle('lit',!avatarVisible);
