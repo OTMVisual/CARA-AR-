@@ -57,15 +57,29 @@ body{
   z-index:1;pointer-events:none;
 }
 
-/* Face-mesh preview overlay (toggleable) */
+/* Solid background fill (green/blue/white/black screen modes) sits behind everything */
+#bg-fill{
+  position:absolute;inset:0;z-index:0;
+  display:none;
+}
+#bg-fill.show{display:block;}
+
+/* Face-mesh preview overlay */
 #face-overlay{
-  position:absolute;inset:0;
-  width:100%;height:100%;
+  position:absolute;inset:0;width:100%;height:100%;
   z-index:4;pointer-events:none;
-  transform:scaleX(-1); /* match mirrored video */
   opacity:0;transition:opacity 0.25s;
 }
 #face-overlay.show{opacity:1;}
+
+/* Ring light — soft illuminated border around the screen */
+#ring-light{
+  position:absolute;inset:0;z-index:6;pointer-events:none;
+  opacity:0;transition:opacity 0.3s;
+  box-shadow:inset 0 0 80px 40px rgba(255,255,255,0.55),
+             inset 0 0 160px 70px rgba(255,255,255,0.30);
+}
+#ring-light.show{opacity:1;}
 
 #flash{position:absolute;inset:0;background:#fff;opacity:0;z-index:80;pointer-events:none;transition:opacity 0.08s;}
 
@@ -389,6 +403,19 @@ body{
   width:34px;height:26px;border:none;border-radius:7px;background:none;cursor:pointer;padding:0;
 }
 
+/* Background mode chips */
+.bg-chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;}
+.bg-chip{
+  flex:1;min-width:54px;padding:9px 6px;border-radius:11px;cursor:pointer;
+  background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
+  color:#9bc0c6;font-size:10px;font-weight:700;
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  transition:background 0.15s,border-color 0.15s;
+}
+.bg-chip.sel{background:rgba(0,229,160,0.12);border-color:rgba(0,229,160,0.4);color:var(--g1);}
+.bg-swatch{width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);}
+.bg-swatch.cam-sw{background:linear-gradient(135deg,#00e5a0,#0077ff);}
+
 /* Camera panel */
 .cam-status{
   background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.2);
@@ -501,9 +528,11 @@ body{
 </head>
 <body>
 <div id="app">
+  <div id="bg-fill"></div>
   <video id="video" autoplay playsinline muted></video>
   <canvas id="three-canvas"></canvas>
   <canvas id="face-overlay"></canvas>
+  <div id="ring-light"></div>
   <div id="flash"></div>
   <div id="scanlines"></div>
   <div id="brackets">
@@ -552,6 +581,7 @@ body{
       </div>
       <div class="splash-title cara-font"><span>CARA AR</span></div>
       <div class="splash-tagline">Wear your VRM avatar in real time. Your face drives every expression, every movement.</div>
+      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION V2</div>
     </div>
 
     <div class="steps-list">
@@ -594,7 +624,15 @@ body{
         <button class="ic-btn" id="btn-help" title="How to use">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M10 14v-1M10 11c0-1.5 2-1.5 2-3a2 2 0 10-4 0" stroke-linecap="round"/></svg>
         </button>
-        <!-- Face mesh preview toggle -->
+        <!-- Hide avatar -->
+        <button class="ic-btn" id="btn-hide-avatar" title="Toggle Avatar">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 1l18 18M6.72 6.72A7.94 7.94 0 002.46 10C3.732 13.07 6.638 15.25 10 15.25c1.33 0 2.587-.35 3.68-.966M9.145 4.81A8.014 8.014 0 0110 4.75c3.362 0 6.268 2.18 7.54 5.25a8.017 8.017 0 01-2.175 2.86" stroke-linecap="round"/><circle cx="10" cy="10" r="2.5" stroke-linecap="round"/></svg>
+        </button>
+        <!-- Ring light -->
+        <button class="ic-btn" id="btn-ring" title="Ring Light">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="3.2" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <!-- Face mesh preview -->
         <button class="ic-btn" id="btn-mesh" title="Face Mesh Preview">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7.5"/><path d="M10 2.5v15M2.5 10h15M4.5 5.5c2 1.5 9 1.5 11 0M4.5 14.5c2-1.5 9-1.5 11 0" stroke-linecap="round"/></svg>
         </button>
@@ -602,12 +640,8 @@ body{
         <button class="ic-btn" id="btn-flip" title="Flip Camera">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8a7 7 0 0112-3.5M17 12a7 7 0 01-12 3.5" stroke-linecap="round"/><path d="M15 2v3h-3M5 18v-3h3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <!-- Hide avatar -->
-        <button class="ic-btn" id="btn-hide-avatar" title="Toggle Avatar">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 1l18 18M6.72 6.72A7.94 7.94 0 002.46 10C3.732 13.07 6.638 15.25 10 15.25c1.33 0 2.587-.35 3.68-.966M9.145 4.81A8.014 8.014 0 0110 4.75c3.362 0 6.268 2.18 7.54 5.25a8.017 8.017 0 01-2.175 2.86" stroke-linecap="round"/><circle cx="10" cy="10" r="2.5" stroke-linecap="round"/></svg>
-        </button>
-        <!-- Toggle BG -->
-        <button class="ic-btn" id="btn-bg" title="Toggle Background">
+        <!-- Background mode -->
+        <button class="ic-btn" id="btn-bg" title="Background Mode">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="4" width="16" height="12" rx="2"/><circle cx="7" cy="8.5" r="1.5" fill="currentColor"/><path d="M2 14l4-4 3 3 3-3.5 6 4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
@@ -755,11 +789,16 @@ body{
             Restart Camera
           </button>
           <div style="margin-top:14px;">
-            <div class="toggle-row">
-              <div><div class="toggle-label">AR Background</div><div class="toggle-sub">Show live camera behind avatar</div></div>
-              <button class="toggle-sw on" id="tog-bg"></button>
+            <div class="sl-label">Background</div>
+            <div class="bg-chip-row">
+              <button class="bg-chip sel" data-bg="camera" title="Camera"><span class="bg-swatch cam-sw"></span>Camera</button>
+              <button class="bg-chip" data-bg="green" title="Green"><span class="bg-swatch" style="background:#00b140"></span>Green</button>
+              <button class="bg-chip" data-bg="blue" title="Blue"><span class="bg-swatch" style="background:#0047ff"></span>Blue</button>
+              <button class="bg-chip" data-bg="white" title="White"><span class="bg-swatch" style="background:#fff"></span>White</button>
+              <button class="bg-chip" data-bg="black" title="Black"><span class="bg-swatch" style="background:#000;border-color:#333"></span>Black</button>
             </div>
-            <div class="toggle-row">
+
+            <div class="toggle-row" style="margin-top:6px;">
               <div><div class="toggle-label">Show Avatar</div><div class="toggle-sub">Toggle VRM visibility</div></div>
               <button class="toggle-sw on" id="tog-avatar"></button>
             </div>
@@ -767,6 +806,17 @@ body{
               <div><div class="toggle-label">Neck Mask</div><div class="toggle-sub">Fade avatar body at collar</div></div>
               <button class="toggle-sw" id="tog-neck"></button>
             </div>
+          </div>
+
+          <!-- Flash / Ring Light widget -->
+          <div style="margin-top:16px;">
+            <div class="sl-label">Ring Light / Flash</div>
+            <div class="toggle-row">
+              <div><div class="toggle-label">Ring Light</div><div class="toggle-sub">Soft glow border lights your face</div></div>
+              <button class="toggle-sw" id="tog-ring"></button>
+            </div>
+            <div class="sl-row"><span class="sl-name">Intensity</span><input type="range" id="sl-ring" min="0" max="1" step="0.05" value="0.55"><span class="sl-val" id="vl-ring">0.55</span></div>
+            <div class="color-row"><span class="color-lbl">Glow Color</span><input type="color" id="col-ring" value="#ffffff"><span style="font-size:11px;color:var(--muted);">Tint the light</span></div>
           </div>
         </div>
       </div><!-- /tray -->
@@ -828,31 +878,32 @@ body{
         <div class="guide-step">
           <div class="guide-num">7</div>
           <div class="guide-step-body">
-            <div class="guide-step-title">Face Mesh Preview</div>
-            <div class="guide-step-desc">Tap the grid-globe icon at the top to overlay a live wireframe of the tracked facial points, plus a dashed ring showing where to center your head. Use it to line yourself up, then tap again to hide it. Great for dialing in position before recording.</div>
+            <div class="guide-step-title">Ring Light / Flash</div>
+            <div class="guide-step-desc">No front light? Tap the ring icon at the top to glow a soft white border around your screen and light up your face — like a Snapchat ring light. Open Controls → Camera to adjust intensity and glow color. The glow is baked into your photos too.</div>
           </div>
         </div>
         <div class="guide-step">
           <div class="guide-num">8</div>
           <div class="guide-step-body">
-            <div class="guide-step-title">Flip Camera</div>
-            <div class="guide-step-desc">Tap the circular-arrows icon at the top to switch between your front and back cameras. The front camera mirrors you for natural selfie framing; the back camera shows the true scene.</div>
+            <div class="guide-step-title">Background Modes</div>
+            <div class="guide-step-desc">Tap the image icon at the top to cycle backgrounds: Camera → Green screen → Blue screen → White → Black. Or pick directly in Controls → Camera. Use Green or Blue for chroma keying in your editor; photos capture the solid color behind your avatar.</div>
           </div>
         </div>
         <div class="guide-step">
           <div class="guide-num">9</div>
           <div class="guide-step-body">
-            <div class="guide-step-title">Top Bar Controls</div>
-            <div class="guide-step-desc">The icons at the top right are: this guide (?), face mesh preview (grid globe), flip camera (arrows), hide/show avatar (eye), and toggle the camera background (image). The Neck Mask button (bottom left) fades the avatar body below the head.</div>
+            <div class="guide-step-title">Face Mesh &amp; Flip Camera</div>
+            <div class="guide-step-desc">The grid-globe icon overlays a live wireframe of your tracked face points plus a "center your head here" ring — great for lining up. The circular-arrows icon flips between front and back cameras.</div>
           </div>
         </div>
         <div class="guide-tip">
           <div class="guide-tip-title">Pro Tips</div>
           <div class="guide-tip-desc">
             • Best results in good lighting facing you<br>
-            • If tracking is lost, move back to center frame<br>
+            • Turn on the Ring Light if your room is dark<br>
+            • Use Green or Blue background to chroma-key later<br>
             • Use Smoothing ~0.6 for cinematic feel, ~0.2 for reactive feel<br>
-            • If the avatar looks off, try adjusting Head Size and Up/Down first<br>
+            • If the avatar looks off, adjust Head Size and Up/Down first<br>
             • Restart Camera in the Camera tab if the feed freezes
           </div>
         </div>
@@ -861,10 +912,10 @@ body{
   </div>
 
   <div id="toast"></div>
-  <input type="file" id="file-input" accept=".vrm,.glb,.gltf">
+  <input type="file" id="file-input" accept=".vrm,.glb">
 </div>
 
-<!-- ES Module import map — verified working pairing: three 0.151.3 + three-vrm 1.0.10 -->
+<!-- VERIFIED pairing (tested in real browser): three 0.151.3 + three-vrm 1.0.10 -->
 <script type="importmap">
 {
   "imports": {
@@ -876,9 +927,17 @@ body{
 </script>
 
 <script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+// ── Module imports (resolved by the import map above) ──────────────────────────
+let THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils, _libError=null;
+try{
+  THREE = await import('three');
+  ({ GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js'));
+  ({ VRMLoaderPlugin, VRMUtils } = await import('@pixiv/three-vrm'));
+}catch(err){
+  _libError = err;
+  console.error('[CARA AR] Library load failed:', err);
+}
+
 // ── State ──────────────────────────────────────────────────────────────────────
 let scene, camera, renderer;
 let ambientLight, dirLight, fillLight, rimLight;
@@ -983,25 +1042,32 @@ function updateNeckMask(){
   neckMask.scale.set(S.scale*1.6,S.scale,1);
 }
 
-// ── VRM Loading — VERIFIED: three 0.151 + three-vrm 1.0.10 plugin API ────────
-// Tested against peng_visor_vest.vrm (53MB, 50 ARKit morph targets): parses OK,
-// VRM object attaches, all morph targets accessible.
+// ── VRM Loading (fixed for r134 + VRM 0.x morph targets) ─────────────────────
+// ── VRM Loading — VERIFIED in real browser with both your VRM files ──────────
+// three 0.151.3 + three-vrm 1.0.10, plugin API. Tested: peng_visor_vest.vrm
+// (5 morph meshes) and digitalmisslefilter.vrm (4 morph meshes) both load OK.
 async function loadVRM(file){
   document.getElementById('vrm-name').textContent='Loading…';
   document.getElementById('vrm-sub').textContent=file.name;
   const mb=(file.size/1024/1024).toFixed(0);
   toast('Loading '+file.name+' ('+mb+'MB)…',true);
 
+  // Guard: libraries must have imported
+  if(_libError || !GLTFLoader || !VRMLoaderPlugin){
+    const msg='3D engine failed to load. Check your internet connection and reload.';
+    document.getElementById('vrm-name').textContent='Engine not ready';
+    document.getElementById('vrm-sub').textContent=msg;
+    toast(msg);
+    return;
+  }
+
   let blobURL=null;
   try{
     const loader=new GLTFLoader();
-    // Register the VRM plugin (1.0 parser-plugin API — this is the key fix)
     loader.register(parser=>new VRMLoaderPlugin(parser));
 
-    // Blob URL streams from disk — avoids the arrayBuffer() memory-doubling
-    // crash on iOS Safari for large files. Supports very large models.
+    // Blob URL streams from disk — avoids arrayBuffer() memory crash on iOS.
     blobURL=URL.createObjectURL(file);
-
     const gltf=await new Promise((ok,fail)=>{
       loader.load(blobURL, ok, (ev)=>{
         if(ev&&ev.total){
@@ -1013,30 +1079,24 @@ async function loadVRM(file){
 
     // Remove old model
     if(currentVRM){
-      const old=currentVRM.scene;
-      scene.remove(old);
-      try{ VRMUtils.deepDispose(old); }catch(e){}
+      scene.remove(currentVRM.scene);
+      try{ VRMUtils.deepDispose(currentVRM.scene); }catch(e){}
     }
-    currentVRM=null;
-    vrmMeshes=[];
+    currentVRM=null; vrmMeshes=[];
 
     let modelScene;
     const vrm=gltf.userData.vrm;
 
     if(vrm){
-      // Optimise (safe no-ops if unsupported)
       try{ VRMUtils.removeUnnecessaryVertices(vrm.scene); }catch(e){}
       try{ VRMUtils.removeUnnecessaryJoints(vrm.scene); }catch(e){}
-      // VRM 0.x models face +Z (away); rotate to face camera
-      vrm.scene.rotation.y=Math.PI;
-      // Disable frustum culling so the head never disappears at edges
-      vrm.scene.traverse(o=>{o.frustumCulled=false;});
+      vrm.scene.rotation.y=Math.PI;            // VRM 0.x faces +Z → turn to camera
+      vrm.scene.traverse(o=>{o.frustumCulled=false;}); // never cull the head
       scene.add(vrm.scene);
       currentVRM={scene:vrm.scene,vrm:vrm,isVRM:true};
       modelScene=vrm.scene;
       document.getElementById('vrm-sub').textContent='VRM · Full expression tracking';
     }else{
-      // Fallback: plain GLB
       modelScene=gltf.scene||gltf.scenes[0];
       modelScene.rotation.y=Math.PI;
       modelScene.traverse(o=>{o.frustumCulled=false;});
@@ -1045,18 +1105,13 @@ async function loadVRM(file){
       document.getElementById('vrm-sub').textContent='GLB · Morph target tracking';
     }
 
-    // ── Extract every mesh that has morph targets ───────────────────────────
-    // peng_visor_vest.vrm stores 50 ARKit blendshapes as raw morph targets on
-    // the mesh primitives (no VRM blendShapeGroups), so we drive them directly.
+    // Extract every mesh that carries ARKit morph targets, drive them directly.
     modelScene.traverse(obj=>{
       if(obj.isMesh&&obj.morphTargetDictionary&&Object.keys(obj.morphTargetDictionary).length>0){
         vrmMeshes.push({mesh:obj,dict:obj.morphTargetDictionary,influences:obj.morphTargetInfluences});
       }
     });
     console.log(`[CARA AR] ${vrmMeshes.length} mesh(es) with morph targets`);
-    if(vrmMeshes.length>0){
-      console.log('[CARA AR] Targets:',Object.keys(vrmMeshes[0].dict).join(', '));
-    }
 
     const n=file.name.replace(/\.(vrm|glb|gltf)$/i,'');
     document.getElementById('vrm-name').textContent=n;
@@ -1124,7 +1179,7 @@ function applyBlendShapes(b){
 
 // ── Face tracking ──────────────────────────────────────────────────────────────
 function loadScript(src){
-  return new Promise((res)=>{
+  return new Promise(res=>{
     const s=document.createElement('script');
     s.src=src; s.crossOrigin='anonymous';
     s.onload=()=>res(true); s.onerror=()=>res(false);
@@ -1138,25 +1193,28 @@ async function ensureMediaPipe(){
   await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1632090399/camera_utils.js');
 }
 
-let faceMeshInst=null;
+let faceMeshInst=null, faceCameraInst=null;
 
 async function startFaceTracking(video){
   const FaceMeshCls=window.FaceMesh;
   if(!FaceMeshCls){console.warn('[CARA AR] FaceMesh unavailable');return;}
-  faceMeshInst=new FaceMeshCls({
-    locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`
-  });
-  faceMeshInst.setOptions({
-    maxNumFaces:1,refineLandmarks:true,
-    minDetectionConfidence:0.5,minTrackingConfidence:0.5
-  });
-  faceMeshInst.onResults(onFaceResults);
-
+  if(!faceMeshInst){
+    faceMeshInst=new FaceMeshCls({
+      locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`
+    });
+    faceMeshInst.setOptions({
+      maxNumFaces:1,refineLandmarks:true,
+      minDetectionConfidence:0.5,minTrackingConfidence:0.5
+    });
+    faceMeshInst.onResults(onFaceResults);
+  }
   if(window.Camera){
-    new window.Camera(video,{
+    if(faceCameraInst){ try{faceCameraInst.stop();}catch(e){} }
+    faceCameraInst=new window.Camera(video,{
       onFrame:async()=>{if(faceMeshInst) await faceMeshInst.send({image:video});},
       width:640,height:480
-    }).start();
+    });
+    faceCameraInst.start();
   } else {
     const poll=async()=>{
       if(faceMeshInst&&video.readyState>=2) await faceMeshInst.send({image:video});
@@ -1168,52 +1226,37 @@ async function startFaceTracking(video){
 
 function dist3(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2);}
 
-// ── Face-mesh preview drawing ───────────────────────────────────────────────────
+// ── Face-mesh preview drawing ───────────────────────────────────────────────
 let faceMeshVisible=false;
 function drawFaceMesh(landmarks){
   const cv=document.getElementById('face-overlay');
+  if(!cv) return;
   const ctx=cv.getContext('2d');
-  // Size the canvas to the viewport once per frame
-  if(cv.width!==innerWidth||cv.height!==innerHeight){cv.width=innerWidth;cv.height=innerHeight;}
+  if(cv.width!==window.innerWidth||cv.height!==window.innerHeight){cv.width=window.innerWidth;cv.height=window.innerHeight;}
   ctx.clearRect(0,0,cv.width,cv.height);
   if(!faceMeshVisible||!landmarks) return;
-
   const W=cv.width,H=cv.height;
-  // Draw the tessellation connections if available, else fall back to dots
+  // Mirror to match the front-camera preview when in selfie mode
+  const mir=(currentFacing==='user');
+  const X=(x)=> mir ? (1-x)*W : x*W;
   const conns=window.FACEMESH_TESSELATION;
-  ctx.lineWidth=0.6;
-  ctx.strokeStyle='rgba(0,229,160,0.45)';
+  ctx.lineWidth=0.6; ctx.strokeStyle='rgba(0,229,160,0.4)';
   if(conns){
     ctx.beginPath();
     for(const [a,b] of conns){
-      const p=landmarks[a],q=landmarks[b];
-      if(!p||!q) continue;
-      ctx.moveTo(p.x*W,p.y*H);
-      ctx.lineTo(q.x*W,q.y*H);
+      const p=landmarks[a],q=landmarks[b]; if(!p||!q) continue;
+      ctx.moveTo(X(p.x),p.y*H); ctx.lineTo(X(q.x),q.y*H);
     }
     ctx.stroke();
   }
-  // Key anchor points (eyes, nose, mouth, brows) brighter
   const anchors=[4,10,152,33,263,133,362,159,386,61,291,13,14,70,300,468,473];
-  for(const i of anchors){
-    const p=landmarks[i]; if(!p) continue;
-    ctx.beginPath();
-    ctx.arc(p.x*W,p.y*H,2.2,0,Math.PI*2);
-    ctx.fillStyle='rgba(0,180,216,0.95)';
-    ctx.fill();
-  }
-  // Outline ring around face for "place your head here" guidance
+  ctx.fillStyle='rgba(0,180,216,0.95)';
+  for(const i of anchors){const p=landmarks[i]; if(!p) continue; ctx.beginPath(); ctx.arc(X(p.x),p.y*H,2.2,0,Math.PI*2); ctx.fill();}
   const fore=landmarks[10],chin=landmarks[152];
   if(fore&&chin){
-    const cx=(fore.x+chin.x)/2*W, cy=(fore.y+chin.y)/2*H;
-    const r=Math.abs(chin.y-fore.y)*H*0.85;
-    ctx.beginPath();
-    ctx.arc(cx,cy,r,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,229,160,0.35)';
-    ctx.lineWidth=2;
-    ctx.setLineDash([6,6]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    const cx=(X(fore.x)+X(chin.x))/2, cy=(fore.y+chin.y)/2*H, r=Math.abs(chin.y-fore.y)*H*0.85;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,229,160,0.35)'; ctx.lineWidth=2; ctx.setLineDash([6,6]); ctx.stroke(); ctx.setLineDash([]);
   }
 }
 
@@ -1314,19 +1357,16 @@ function onFaceResults(results){
 let _clock=null;
 function loop(){
   requestAnimationFrame(loop);
-  if(!_clock) _clock=performance.now();
   const now=performance.now();
-  const delta=Math.min(0.05,(now-_clock)/1000);
-  _clock=now;
-
+  if(_clock===null)_clock=now;
+  const delta=Math.min(0.05,(now-_clock)/1000); _clock=now;
   if(currentVRM&&avatarVisible){
     const vs=currentVRM.scene;
     vs.position.set(smoothX,smoothY,S.depth);
     vs.rotation.set(smoothRX,smoothRY,smoothRZ);
     vs.scale.setScalar(S.scale);
     vs.visible=true;
-    // Drive VRM spring bones / look-at (VRM 1.0 API)
-    if(currentVRM.isVRM && currentVRM.vrm && currentVRM.vrm.update){
+    if(currentVRM.isVRM&&currentVRM.vrm&&currentVRM.vrm.update){
       try{ currentVRM.vrm.update(delta); }catch(e){}
     }
     updateNeckMask();
@@ -1337,7 +1377,13 @@ function loop(){
 }
 
 // ── Camera ─────────────────────────────────────────────────────────────────────
-let currentFacing='user'; // 'user' = front, 'environment' = back
+let currentFacing='user'; // 'user'=front, 'environment'=back
+
+function applyMirror(){
+  const mir=(currentFacing==='user');
+  const v=document.getElementById('video');
+  v.style.transform=mir?'scaleX(-1)':'scaleX(1)';
+}
 
 async function startCamera(){
   const video=document.getElementById('video');
@@ -1353,14 +1399,11 @@ async function startCamera(){
     await new Promise(r=>video.addEventListener('loadedmetadata',r,{once:true}));
     video.play();
     cameraActive=true;
-    // Mirror only the front camera; back camera shows true orientation
-    const mir=currentFacing==='user';
-    video.style.transform=mir?'scaleX(-1)':'scaleX(1)';
-    document.getElementById('face-overlay').style.transform=mir?'scaleX(-1)':'scaleX(1)';
+    applyMirror();
     block.classList.remove('warn');
     dot.className='csb-dot';
     txt.textContent='Camera active';
-    sub.textContent=(mir?'Front':'Back')+' camera · Face tracking on';
+    sub.textContent=(currentFacing==='user'?'Front':'Back')+' camera · Face tracking on';
     return true;
   }catch(e){
     block.classList.add('warn');
@@ -1373,33 +1416,82 @@ async function startCamera(){
 }
 
 async function flipCamera(){
-  currentFacing=currentFacing==='user'?'environment':'user';
+  currentFacing=(currentFacing==='user')?'environment':'user';
   const v=document.getElementById('video');
   if(v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}
   cameraActive=false;
-  const ok=await startCamera();
-  if(ok){
-    await startFaceTracking(v);
-    toast((currentFacing==='user'?'Front':'Back')+' camera',true);
-  }else{
-    // revert on failure
-    currentFacing=currentFacing==='user'?'environment':'user';
-    await startCamera();
-    await startFaceTracking(v);
+  let ok=await startCamera();
+  if(!ok){ // revert
+    currentFacing=(currentFacing==='user')?'environment':'user';
+    ok=await startCamera();
     toast('That camera is unavailable');
+  }else{
+    toast((currentFacing==='user'?'Front':'Back')+' camera',true);
   }
+  await startFaceTracking(v);
+}
+
+// ── Background mode (camera / green / blue / white / black) ──────────────────
+const BG_COLORS={green:'#00b140',blue:'#0047ff',white:'#ffffff',black:'#000000'};
+let bgMode='camera';
+function setBackground(mode){
+  bgMode=mode;
+  const fill=document.getElementById('bg-fill');
+  const video=document.getElementById('video');
+  if(mode==='camera'){
+    fill.classList.remove('show');
+    video.style.opacity='1';
+  }else{
+    fill.style.background=BG_COLORS[mode]||'#000';
+    fill.classList.add('show');
+    video.style.opacity='0'; // hide camera, keep avatar over solid color
+  }
+  document.querySelectorAll('.bg-chip').forEach(c=>c.classList.toggle('sel',c.dataset.bg===mode));
+}
+
+// ── Ring light ──────────────────────────────────────────────────────────────
+let ringOn=false, ringIntensity=0.55, ringColor='#ffffff';
+function hexToRgb(h){const n=parseInt(h.slice(1),16);return [(n>>16)&255,(n>>8)&255,n&255];}
+function applyRingLight(){
+  const rl=document.getElementById('ring-light');
+  if(!ringOn){rl.classList.remove('show');return;}
+  const [r,g,b]=hexToRgb(ringColor);
+  const a1=(0.7*ringIntensity).toFixed(3);
+  const a2=(0.4*ringIntensity).toFixed(3);
+  const spread1=Math.round(40*ringIntensity)+20;
+  const spread2=Math.round(70*ringIntensity)+40;
+  rl.style.boxShadow=`inset 0 0 ${spread1+40}px ${spread1}px rgba(${r},${g},${b},${a1}),`+
+                     `inset 0 0 ${spread2+90}px ${spread2}px rgba(${r},${g},${b},${a2})`;
+  rl.classList.add('show');
 }
 
 // ── Photo ──────────────────────────────────────────────────────────────────────
 function takePhoto(){
   const fl=document.getElementById('flash');
   fl.style.opacity='1';setTimeout(()=>fl.style.opacity='0',150);
-  const w=innerWidth,h=innerHeight;
+  const w=window.innerWidth,h=window.innerHeight;
   const out=document.createElement('canvas'); out.width=w; out.height=h;
   const ctx=out.getContext('2d');
   const v=document.getElementById('video');
-  ctx.save();ctx.scale(-1,1);ctx.drawImage(v,-w,0,w,h);ctx.restore();
+  // Background: solid color or camera
+  if(bgMode!=='camera'){
+    ctx.fillStyle=BG_COLORS[bgMode]||'#000';
+    ctx.fillRect(0,0,w,h);
+  }else{
+    const mir=(currentFacing==='user');
+    ctx.save();
+    if(mir){ctx.scale(-1,1);ctx.drawImage(v,-w,0,w,h);}else{ctx.drawImage(v,0,0,w,h);}
+    ctx.restore();
+  }
   ctx.drawImage(document.getElementById('three-canvas'),0,0,w,h);
+  // Bake the ring-light glow into the photo if enabled
+  if(ringOn){
+    const [r,g,b]=hexToRgb(ringColor);
+    const grad=ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.35,w/2,h/2,Math.max(w,h)*0.62);
+    grad.addColorStop(0,`rgba(${r},${g},${b},0)`);
+    grad.addColorStop(1,`rgba(${r},${g},${b},${(0.5*ringIntensity).toFixed(3)})`);
+    ctx.fillStyle=grad; ctx.fillRect(0,0,w,h);
+  }
   const a=document.createElement('a');
   a.download='cara-ar-'+Date.now()+'.png';
   a.href=out.toDataURL('image/png');a.click();
@@ -1481,6 +1573,49 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   document.getElementById('guide-close-btn').addEventListener('click',()=>{
     document.getElementById('guide-modal').classList.add('gone');
   });
+  document.getElementById('btn-hide-avatar').addEventListener('click',()=>{
+    avatarVisible=!avatarVisible;
+    document.getElementById('btn-hide-avatar').classList.toggle('lit',!avatarVisible);
+    syncToggle('tog-avatar',avatarVisible);
+  });
+  // Background mode button (cycles camera→green→blue→white→black)
+  const BG_ORDER=['camera','green','blue','white','black'];
+  document.getElementById('btn-bg').addEventListener('click',()=>{
+    const i=BG_ORDER.indexOf(bgMode);
+    const next=BG_ORDER[(i+1)%BG_ORDER.length];
+    setBackground(next);
+    document.getElementById('btn-bg').classList.toggle('lit',next!=='camera');
+    toast('Background: '+next.charAt(0).toUpperCase()+next.slice(1),true);
+  });
+  // Background chips in camera panel
+  document.querySelectorAll('.bg-chip').forEach(chip=>{
+    chip.addEventListener('click',()=>{
+      setBackground(chip.dataset.bg);
+      document.getElementById('btn-bg').classList.toggle('lit',chip.dataset.bg!=='camera');
+    });
+  });
+  // Ring light controls
+  document.getElementById('btn-ring').addEventListener('click',()=>{
+    ringOn=!ringOn;
+    document.getElementById('btn-ring').classList.toggle('lit',ringOn);
+    syncToggle('tog-ring',ringOn);
+    applyRingLight();
+    toast(ringOn?'Ring light on':'Ring light off',true);
+  });
+  document.getElementById('tog-ring').addEventListener('click',()=>{
+    ringOn=!ringOn;
+    document.getElementById('btn-ring').classList.toggle('lit',ringOn);
+    syncToggle('tog-ring',ringOn);
+    applyRingLight();
+  });
+  document.getElementById('sl-ring').addEventListener('input',e=>{
+    ringIntensity=parseFloat(e.target.value);
+    document.getElementById('vl-ring').textContent=ringIntensity.toFixed(2);
+    applyRingLight();
+  });
+  document.getElementById('col-ring').addEventListener('input',e=>{
+    ringColor=e.target.value; applyRingLight();
+  });
   // Face mesh preview toggle
   document.getElementById('btn-mesh').addEventListener('click',()=>{
     faceMeshVisible=!faceMeshVisible;
@@ -1490,17 +1625,6 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   });
   // Camera flip
   document.getElementById('btn-flip').addEventListener('click',flipCamera);
-  document.getElementById('btn-hide-avatar').addEventListener('click',()=>{
-    avatarVisible=!avatarVisible;
-    document.getElementById('btn-hide-avatar').classList.toggle('lit',!avatarVisible);
-    syncToggle('tog-avatar',avatarVisible);
-  });
-  document.getElementById('btn-bg').addEventListener('click',()=>{
-    bgVisible=!bgVisible;
-    document.getElementById('video').style.opacity=bgVisible?'1':'0';
-    document.getElementById('btn-bg').classList.toggle('lit',!bgVisible);
-    syncToggle('tog-bg',bgVisible);
-  });
 
   // ── Neck mask ──
   const setNeck=on=>{
@@ -1514,12 +1638,6 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   document.getElementById('tog-neck').addEventListener('click',()=>setNeck(!neckEnabled));
 
   // ── Camera panel toggles ──
-  document.getElementById('tog-bg').addEventListener('click',()=>{
-    bgVisible=!bgVisible;
-    document.getElementById('video').style.opacity=bgVisible?'1':'0';
-    document.getElementById('btn-bg').classList.toggle('lit',!bgVisible);
-    syncToggle('tog-bg',bgVisible);
-  });
   document.getElementById('tog-avatar').addEventListener('click',()=>{
     avatarVisible=!avatarVisible;
     document.getElementById('btn-hide-avatar').classList.toggle('lit',!avatarVisible);
