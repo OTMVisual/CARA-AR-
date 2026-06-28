@@ -833,8 +833,8 @@ body{
           </div>
           <div class="sl-section">
             <div class="sl-label">Tracking Feel</div>
-            <div class="sl-row"><span class="sl-name">Sensitivity</span><input type="range" id="sl-sens" min="0.3" max="2.5" step="0.05" value="1.2"><span class="sl-val" id="vl-sens">1.20</span></div>
-            <div class="sl-row"><span class="sl-name">Smoothing</span><input type="range" id="sl-smooth" min="0.05" max="0.95" step="0.05" value="0.4"><span class="sl-val" id="vl-smooth">0.40</span></div>
+            <div class="sl-row"><span class="sl-name">Sensitivity</span><input type="range" id="sl-sens" min="0.3" max="2.5" step="0.05" value="1.0"><span class="sl-val" id="vl-sens">1.00</span></div>
+            <div class="sl-row"><span class="sl-name">Smoothing</span><input type="range" id="sl-smooth" min="0.05" max="0.95" step="0.05" value="0.6"><span class="sl-val" id="vl-smooth">0.60</span></div>
           </div>
         </div>
 
@@ -1054,7 +1054,7 @@ let userTiltX=0;       // base tilt (X rotation) offset in radians
 let lockPose=false;    // when true, freeze the avatar (ignore face tracking)
 let lockedState=null;  // captured pose when locking
 
-const S = { scale:1.4, offsetY:0.1, offsetX:0, depth:-0.5, sensitivity:1.2, smooth:0.4 };
+const S = { scale:1.4, offsetY:0.1, offsetX:0, depth:-0.5, sensitivity:1.0, smooth:0.6 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function setLoad(pct,msg){
@@ -1314,6 +1314,19 @@ async function startFaceTracking(video){
 function dist3(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2);}
 
 // ── Per-blendshape smoothing for a polished, non-jittery look ────────────────
+// Per-blendshape gain calibration. 1.0 = use the model's raw score.
+// MediaPipe under-reports cheek/tongue/pucker/funnel — boost so they read.
+const BS_GAIN={
+  cheekPuff:3.2,            // very weak in the model — needs a big boost
+  cheekSquintLeft:1.6, cheekSquintRight:1.6,
+  mouthPucker:1.8, mouthFunnel:1.5,
+  tongueOut:2.0,
+  noseSneerLeft:1.4, noseSneerRight:1.4,
+  mouthDimpleLeft:1.3, mouthDimpleRight:1.3,
+  browInnerUp:1.2,
+  // keep blinks/jaw/smile at 1.0 — already accurate
+};
+
 const _bsSmooth={}; // name → smoothed value
 function smoothBS(name,target,factor){
   const prev=_bsSmooth[name]||0;
@@ -1371,13 +1384,17 @@ function onFaceLandmarks(res){
   const sens=S.sensitivity;
 
   // ── 1) Blendshapes → VRM morphs (direct 1:1 mapping) ──────────────────
+  // Per-shape gain: MediaPipe under-reports some shapes (esp. cheekPuff,
+  // tongueOut, pucker). We boost those so they read clearly on the avatar,
+  // matching how polished AR apps calibrate the raw model output.
   if(res.faceBlendshapes && res.faceBlendshapes.length){
     const cats=res.faceBlendshapes[0].categories;
     for(let i=0;i<cats.length;i++){
       const name=cats[i].categoryName;
       if(name==='_neutral') continue;
-      // Light gain on expressive shapes via sensitivity, clamped 0..1
       let val=cats[i].score;
+      const gain=BS_GAIN[name]||1.0;
+      val=val*gain;
       const sv=smoothBS(name, val, follow);
       setMorph(name, Math.min(1, sv*sens));
     }
@@ -1386,30 +1403,38 @@ function onFaceLandmarks(res){
   // ── 2) Head pose from the facial transformation matrix ────────────────
   if(res.facialTransformationMatrixes && res.facialTransformationMatrixes.length){
     const m=res.facialTransformationMatrixes[0].data; // 4x4 column-major
-    // Extract Euler angles from the rotation part
-    // m indices: [0..15], rotation in upper-left 3x3
-    const r00=m[0], r10=m[1], r20=m[2];
-    const r21=m[6], r22=m[10], r01=m[4], r02=m[8], r11=m[5], r12=m[9];
-    // Yaw (Y), Pitch (X), Roll (Z)
-    let pitch=Math.asin(Math.max(-1,Math.min(1,-r20)));
-    let yaw=Math.atan2(r10, r00);
-    let roll=Math.atan2(r21, r22);
+    // Column-major: m[col*4+row]. Rotation elements:
+    const R10=m[1], R11=m[5];
+    const R02=m[8], R12=m[9], R22=m[10];
+    // Verified Tait-Bryan (YXZ) extraction:
+    let yaw  = Math.atan2(R02, R22);              // about Y (turn left/right)
+    let pitch= Math.asin(Math.max(-1,Math.min(1,-R12))); // about X (nod)
+    let roll = Math.atan2(R10, R11);              // about Z (tilt)
     const mir=(currentFacing==='user');
-    const tYaw  = (mir? yaw : -yaw) * sens;
-    const tPitch= pitch * sens;
-    const tRoll = (mir? -roll : roll) * sens;
-    smoothRY+=(tYaw  - smoothRY)*follow;
-    smoothRX+=(tPitch- smoothRX)*follow;
-    smoothRZ+=(tRoll - smoothRZ)*follow;
+    // DAMPEN rotation: subtle tilt like a native AR filter, never extreme.
+    const ROT_DAMP=0.55;                 // 55% of the real head angle
+    const g=ROT_DAMP*Math.min(1.4,sens);
+    const CLAMP=0.6;                       // ~34° cap so it never flips sideways
+    const clamp=(v)=>Math.max(-CLAMP,Math.min(CLAMP,v));
+    const tYaw  = clamp((mir? yaw : -yaw) * g);
+    const tPitch= clamp(pitch * g);
+    const tRoll = clamp((mir? -roll : roll) * g);
+    const rotFollow=follow*0.6; // extra rotation smoothing
+    smoothRY+=(tYaw  - smoothRY)*rotFollow;
+    smoothRX+=(tPitch- smoothRX)*rotFollow;
+    smoothRZ+=(tRoll - smoothRZ)*rotFollow;
   }
 
-  // ── 3) Head position from face center (between eyes) ──────────────────
+  // ── 3) Head position — keep it centered & locked over the head ────────
   const eyeL=L[33], eyeR=L[263], fore=L[10], chin=L[152];
   const faceCx=(eyeL.x+eyeR.x)/2, faceCy=(fore.y+chin.y)/2;
   const cx=(faceCx-0.5), cy=-(faceCy-0.5);
-  const posGain=4.2;
-  smoothX+=((cx*posGain) - smoothX)*follow;
-  smoothY+=((cy*posGain)+S.offsetY - smoothY)*follow;
+  // Lower gain → the avatar stays planted over the head instead of flying around.
+  const posGain=2.6;
+  // Slightly slower position follow than expressions for a stable, locked-on feel.
+  const posFollow=follow*0.75;
+  smoothX+=((cx*posGain) - smoothX)*posFollow;
+  smoothY+=((cy*posGain)+S.offsetY - smoothY)*posFollow;
 
   // ── 4) Eye gaze for bone-based lookAt (from blendshape look values) ───
   if(res.faceBlendshapes && res.faceBlendshapes.length){
