@@ -1280,9 +1280,11 @@ function b64ToArrayBuffer(b64){
 // Retarget a Mixamo clip onto the loaded VRM, excluding head/neck.
 function retargetClip(srcClip, srcScene, vrm){
   const tracks=[];
+  // Index the Mixamo source bone nodes (track names are colon-less)
+  const mixNodes={}; srcScene.traverse(o=>{ if(o.name&&o.name.indexOf('mixamorig')===0) mixNodes[o.name]=o; });
   const vrmHips=vrm.humanoid.getNormalizedBoneNode('hips');
   const hp=new THREE.Vector3(); if(vrmHips) vrmHips.getWorldPosition(hp);
-  let srcHips=null; srcScene.traverse(o=>{ if(o.name==='mixamorig:Hips'||o.name==='mixamorigHips') srcHips=o; });
+  const srcHips=mixNodes['mixamorigHips'];
   const hipScale=(srcHips&&srcHips.position.y!==0)?(hp.y/srcHips.position.y):0.01;
   for(const t of srcClip.tracks){
     const dot=t.name.lastIndexOf('.'); if(dot<0) continue;
@@ -1290,16 +1292,45 @@ function retargetClip(srcClip, srcScene, vrm){
     const vb=MIXAMO_TO_VRM[bone]; if(!vb) continue;
     if(ANIM_EXCLUDE.has(vb)) continue;            // head/neck → face tracking owns them
     const node=vrm.humanoid.getNormalizedBoneNode(vb); if(!node) continue;
+    const mixNode=mixNodes[bone]; if(!mixNode) continue;
     if(prop==='quaternion'){
-      tracks.push(new THREE.QuaternionKeyframeTrack(node.name+'.quaternion', t.times, t.values.slice()));
+      // POSE-INDEPENDENT (A-pose & T-pose both work): apply the animation as a
+      // DELTA from the Mixamo rest onto the avatar's OWN rest pose.
+      //   delta = mixRestLocal^-1 * animLocal ;  final = vrmRestLocal * delta
+      const RmInv=mixNode.quaternion.clone().invert();
+      const Rv=node.quaternion.clone();
+      const out=new Float32Array(t.values.length);
+      const A=new THREE.Quaternion(), d=new THREE.Quaternion();
+      for(let i=0;i<t.values.length;i+=4){
+        A.set(t.values[i],t.values[i+1],t.values[i+2],t.values[i+3]);
+        d.copy(RmInv).multiply(A);
+        const f=Rv.clone().multiply(d);
+        out[i]=f.x; out[i+1]=f.y; out[i+2]=f.z; out[i+3]=f.w;
+      }
+      tracks.push(new THREE.QuaternionKeyframeTrack(node.name+'.quaternion', t.times, out));
     }else if(prop==='position' && vb==='hips'){
       tracks.push(new THREE.VectorKeyframeTrack(node.name+'.position', t.times, Array.from(t.values).map(v=>v*hipScale)));
     }
   }
   return new THREE.AnimationClip('idle', srcClip.duration, tracks);
 }
+// Capture the avatar's original rest pose so "None" can restore it exactly.
+let _restPose=null;
+function captureRestPose(vrm){
+  _restPose=[];
+  for(const vb of Object.values(MIXAMO_TO_VRM)){
+    const node=vrm.humanoid.getNormalizedBoneNode(vb);
+    if(node) _restPose.push({node, q:node.quaternion.clone(), p:node.position.clone()});
+  }
+}
+function restoreRestPose(){
+  if(!_restPose) return;
+  for(const r of _restPose){ r.node.quaternion.copy(r.q); r.node.position.copy(r.p); }
+}
 // Load all idle clips for the current VRM and set up the mixer.
 async function setupIdleAnimations(vrm){
+  vrm.scene.updateWorldMatrix(true,true);
+  captureRestPose(vrm);                 // remember the T-pose / A-pose rest
   animMixer=new THREE.AnimationMixer(vrm.scene);
   animActions={};
   const loader=new GLTFLoader();
@@ -1316,7 +1347,6 @@ async function setupIdleAnimations(vrm){
 }
 function playIdle(name){
   if(!animActions[name]) return;
-  // crossfade from current
   const next=animActions[name];
   if(currentAnimName && animActions[currentAnimName] && currentAnimName!==name){
     const prev=animActions[currentAnimName];
@@ -1327,8 +1357,10 @@ function playIdle(name){
   currentAnimName=name;
 }
 function stopIdle(){
-  if(currentAnimName && animActions[currentAnimName]) animActions[currentAnimName].fadeOut(0.3);
+  // Stop ALL actions and snap the body back to its original rest pose (T/A-pose).
+  if(animMixer){ try{ animMixer.stopAllAction(); }catch(e){} }
   currentAnimName=null;
+  restoreRestPose();
 }
 function setActiveAnimBtn(name){
   document.querySelectorAll('.anim-btn').forEach(b=>{
