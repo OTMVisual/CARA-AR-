@@ -672,7 +672,7 @@ body{
       </div>
       <div class="splash-title cara-font"><span>CARA AR</span></div>
       <div class="splash-tagline">Wear your VRM avatar in real time. Your face drives every expression, every movement.</div>
-      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION V2</div>
+      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION V.10</div>
     </div>
 
     <div class="steps-list">
@@ -1373,14 +1373,23 @@ function dist3(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2);}
 // Per-blendshape gain calibration. 1.0 = use the model's raw score.
 // MediaPipe under-reports cheek/tongue/pucker/funnel — boost so they read.
 const BS_GAIN={
-  cheekPuff:5.0,           // MediaPipe reports this VERY weak — needs strong boost
-  cheekSquintLeft:2.0, cheekSquintRight:2.0,
-  mouthPucker:2.0, mouthFunnel:1.6,
-  tongueOut:2.5,
-  noseSneerLeft:1.6, noseSneerRight:1.6,
-  mouthDimpleLeft:1.4, mouthDimpleRight:1.4,
-  browInnerUp:1.3,
-  // keep blinks/jaw/smile at 1.0 — already accurate
+  cheekPuff:6.0,           // MediaPipe reports this VERY weak
+  cheekSquintLeft:2.2, cheekSquintRight:2.2,
+  mouthPucker:2.2, mouthFunnel:2.0,
+  tongueOut:3.0,
+  noseSneerLeft:2.5, noseSneerRight:2.5,
+  mouthDimpleLeft:1.5, mouthDimpleRight:1.5,
+  browInnerUp:1.4,
+  mouthFrownLeft:2.5, mouthFrownRight:2.5,
+  mouthLowerDownLeft:2.2, mouthLowerDownRight:2.2,
+  mouthPressLeft:2.5, mouthPressRight:2.5,
+  mouthStretchLeft:2.0, mouthStretchRight:2.0,
+  mouthRollLower:2.5, mouthRollUpper:2.5,
+  mouthShrugLower:1.6, mouthShrugUpper:1.6,
+  mouthUpperUpLeft:1.6, mouthUpperUpRight:1.6,
+  mouthClose:1.8,
+  jawForward:2.0, jawLeft:1.5, jawRight:1.5,
+  // keep blinks/jaw-open/smile at 1.0 — already accurate
 };
 
 // Live blendshape values for the on-screen face-parameter panel
@@ -1389,7 +1398,12 @@ const liveBlendshapes={}; // name → {raw, val}
 const _bsSmooth={}; // name → smoothed value
 function smoothBS(name,target,factor){
   const prev=_bsSmooth[name]||0;
-  const v=prev+(target-prev)*factor;
+  // Asymmetric smoothing: snap UP quickly so expressions read crisply,
+  // ease DOWN smoothly so they don't flicker. This makes subtle/brief
+  // expressions (frown, press, sneer) actually register.
+  const rising = target>prev;
+  const f = rising ? Math.min(1, factor*2.2) : factor;
+  const v=prev+(target-prev)*f;
   _bsSmooth[name]=v;
   return v;
 }
