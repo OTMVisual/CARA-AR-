@@ -672,7 +672,7 @@ body{
       </div>
       <div class="splash-title cara-font"><span>CARA AR</span></div>
       <div class="splash-tagline">Wear your VRM avatar in real time. Your face drives every expression, every movement.</div>
-      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION BETA</div>
+      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION BETA .1</div>
     </div>
 
     <div class="steps-list">
@@ -1266,9 +1266,24 @@ async function loadVRM(file){
     }
 
     // Extract every mesh that carries ARKit morph targets, drive them directly.
+    // Some exporters (e.g. Blender's saturday06 VRM exporter) store the morph
+    // dictionary with NUMERIC keys (0,1,2…) and put the real ARKit names in
+    // geometry.userData.targetNames. We remap those so name lookups still work.
     modelScene.traverse(obj=>{
-      if(obj.isMesh&&obj.morphTargetDictionary&&Object.keys(obj.morphTargetDictionary).length>0){
-        vrmMeshes.push({mesh:obj,dict:obj.morphTargetDictionary,influences:obj.morphTargetInfluences});
+      if(obj.isMesh && obj.morphTargetDictionary && Object.keys(obj.morphTargetDictionary).length>0){
+        let dict=obj.morphTargetDictionary;
+        const keys=Object.keys(dict);
+        const isNumeric = keys.every(k=>/^\d+$/.test(k));
+        const names = obj.geometry && obj.geometry.userData && obj.geometry.userData.targetNames;
+        if(isNumeric && names && names.length){
+          // Rebuild dict as { arkitName : influenceIndex }
+          const remapped={};
+          for(let i=0;i<names.length;i++){ remapped[names[i]]=i; }
+          dict=remapped;
+          obj.morphTargetDictionary=remapped; // also fix on the mesh itself
+          console.log('[CARA AR] remapped numeric morphs →', names.slice(0,4).join(','),'…');
+        }
+        vrmMeshes.push({mesh:obj,dict:dict,influences:obj.morphTargetInfluences});
       }
     });
     console.log(`[CARA AR] ${vrmMeshes.length} mesh(es) with morph targets`);
@@ -1479,22 +1494,22 @@ function onFaceLandmarks(res){
   }
 
   // ── 1b) Geometric cheek-puff assist ───────────────────────────────────
-  // MediaPipe's cheekPuff coefficient is famously broken (often stays ~0).
-  // We measure cheek fullness from the landmarks directly and blend it in,
-  // so a real puff actually shows even when the model misses it.
-  if(L && L[234] && L[454] && L[33] && L[263]){
+  // VERIFIED with the real model: MediaPipe's cheekPuff stays 0.000 even when
+  // puffing hard. But the landmark geometry clearly catches it — the cheek
+  // width / eye width ratio rises from ~1.31 (neutral) to ~1.47 (puffed).
+  // We calibrate to those measured values and drive cheekPuff from geometry.
+  if(L && L[58] && L[288] && L[33] && L[263]){
     const eyeW=dist3(L[33],L[263])||1e-4;
-    // Lower-cheek width (points 58 & 288 sit on the cheeks beside the mouth)
-    const cheekW=(L[58]&&L[288])? dist3(L[58],L[288]) : dist3(L[234],L[454]);
-    const ratio=cheekW/eyeW;                 // ~1.35 neutral, rises when puffed
-    // Map ratio above a neutral baseline to 0..1 (calibrated to the model data)
-    let puff=Math.min(1, Math.max(0, (ratio-1.45)/0.45));
-    const modelPuff=liveBlendshapes['cheekPuff']? liveBlendshapes['cheekPuff'].val : 0;
-    const combined=Math.max(modelPuff, smoothBS('_cheekGeo', puff, follow));
-    if(combined>0.02){
-      setMorph('cheekPuff', combined);
-      liveBlendshapes['cheekPuff']={raw:puff, val:combined};
-    }
+    const cheekW=dist3(L[58],L[288]);     // cheek points beside the mouth
+    const ratio=cheekW/eyeW;
+    const baseline=1.32, span=0.16;        // measured: neutral 1.31 → puff 1.47
+    let puff=Math.max(0, Math.min(1, (ratio-baseline)/span));
+    puff=Math.min(1, Math.pow(puff,0.7)*1.3); // boost for clear expression
+    const geo=smoothBS('_cheekGeo', puff, follow);
+    const modelPuff=(liveBlendshapes['cheekPuff']? liveBlendshapes['cheekPuff'].val : 0);
+    const combined=Math.max(modelPuff, geo);
+    setMorph('cheekPuff', combined);
+    liveBlendshapes['cheekPuff']={raw:Math.max(ratio-baseline,0), val:combined};
   }
 
   // ── 2) Head pose from the facial transformation matrix ────────────────
@@ -1524,16 +1539,21 @@ function onFaceLandmarks(res){
     smoothRZ+=(tRoll - smoothRZ)*rotFollow;
   }
 
-  // ── 3) Head position — keep it centered & locked over the head ────────
+  // ── 3) Head position — keep it locked & centered like a native AR filter ──
+  // VERIFIED: the face center moves up to ~33% of frame width. With high gain
+  // that flings the avatar off-screen. We use a gentle gain + clamp so it
+  // tracks your head but stays centered (the Unity-style locked-on look).
   const eyeL=L[33], eyeR=L[263], fore=L[10], chin=L[152];
   const faceCx=(eyeL.x+eyeR.x)/2, faceCy=(fore.y+chin.y)/2;
   const cx=(faceCx-0.5), cy=-(faceCy-0.5);
-  // Lower gain → the avatar stays planted over the head instead of flying around.
-  const posGain=2.6;
-  // Slightly slower position follow than expressions for a stable, locked-on feel.
-  const posFollow=follow*0.75;
-  smoothX+=((cx*posGain) - smoothX)*posFollow;
-  smoothY+=((cy*posGain)+S.offsetY - smoothY)*posFollow;
+  const posGain=1.3;                 // was 2.6 — halved so it doesn't slide off
+  const POS_CLAMP=0.9;               // hard cap on how far it can travel
+  const clampP=(v)=>Math.max(-POS_CLAMP,Math.min(POS_CLAMP,v));
+  const posFollow=follow*0.7;
+  const targetX=clampP(cx*posGain);
+  const targetY=clampP(cy*posGain) + S.offsetY;
+  smoothX+=(targetX - smoothX)*posFollow;
+  smoothY+=(targetY - smoothY)*posFollow;
 
   // ── 4) Eye gaze for bone-based lookAt (from blendshape look values) ───
   if(res.faceBlendshapes && res.faceBlendshapes.length){
