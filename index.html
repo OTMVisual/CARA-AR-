@@ -309,6 +309,31 @@ body{
 .rec-timer .dot{width:8px;height:8px;border-radius:50%;background:#fff;animation:recblink 1s infinite;}
 @keyframes recblink{50%{opacity:0.3;}}
 
+/* FX overlay (lens flare / glare) — pointer-events none so it never blocks UI */
+#fx-overlay{position:fixed;inset:0;z-index:7;pointer-events:none;opacity:1;}
+#fx-overlay.flare-on{
+  background:
+    radial-gradient(circle at 72% 28%, rgba(255,240,200,0.42) 0%, rgba(255,220,160,0.12) 9%, transparent 22%),
+    linear-gradient(115deg, transparent 38%, rgba(255,250,230,0.16) 49%, transparent 60%);
+  mix-blend-mode:screen;
+}
+#fx-overlay.glare-on{
+  box-shadow: inset 0 0 180px 40px rgba(255,255,255,0.10);
+  background:radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,0.28) 100%);
+}
+/* FX panel rows */
+.fx-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+.fx-name{font-size:14px;font-weight:600;color:var(--text);}
+.fx-desc{font-size:11px;color:var(--muted);margin-top:2px;}
+.fx-toggle{width:48px;height:28px;border-radius:16px;background:rgba(255,255,255,0.12);border:none;cursor:pointer;position:relative;transition:background 0.2s;flex-shrink:0;}
+.fx-toggle span{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform 0.2s;}
+.fx-toggle.on{background:var(--grad-1);}
+.fx-toggle.on span{transform:translateX(20px);}
+.sl-row{display:flex;align-items:center;gap:10px;padding:6px 0 12px;}
+.sl-row label{font-size:12px;color:var(--muted);width:64px;flex-shrink:0;}
+.sl-row input[type=range]{flex:1;}
+.sl-row.hidden{display:none;}
+
 /* Side pill buttons */
 .side-col{display:flex;flex-direction:column;gap:8px;}
 
@@ -656,6 +681,7 @@ body{
   <div id="bg-fill"></div>
   <video id="video" autoplay playsinline muted></video>
   <canvas id="three-canvas"></canvas>
+  <div id="fx-overlay"></div>
   <canvas id="face-overlay"></canvas>
   <div id="ring-light"></div>
   <div id="flash"></div>
@@ -706,7 +732,7 @@ body{
       </div>
       <div class="splash-title cara-font"><span>CARA AR</span></div>
       <div class="splash-tagline">Wear your VRM avatar in real time. Your face drives every expression, every movement.</div>
-      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION BETA .1</div>
+      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION BETA 1.1</div>
     </div>
 
     <div class="steps-list">
@@ -847,6 +873,7 @@ body{
           <button class="ttab" data-tab="tracking">Track</button>
           <button class="ttab" data-tab="offset">Offset</button>
           <button class="ttab" data-tab="anim">Animate</button>
+          <button class="ttab" data-tab="fx">FX</button>
           <button class="ttab" data-tab="camera">Camera</button>
         </div>
 
@@ -865,6 +892,18 @@ body{
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10M6 9l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 17h14" stroke-linecap="round"/></svg>
             Import VRM from Files
           </button>
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.07);">
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;">Two-Person Mode</div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.4;">Load a 2nd avatar to track two faces at once. Each person gets their own avatar.</div>
+            <button class="btn-import" id="btn-import-2" style="background:rgba(255,255,255,0.04);">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="3"/><circle cx="14" cy="9" r="2.5"/><path d="M2 17c0-2.8 2.2-5 5-5M11 17c0-2 1.3-3.7 3-4.3" stroke-linecap="round"/></svg>
+              Import 2nd Avatar
+            </button>
+            <button class="btn-import" id="btn-remove-vrm2" style="display:none;background:rgba(239,68,68,0.1);border-color:rgba(239,68,68,0.3);color:#f87171;margin-top:8px;">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5l10 10M15 5L5 15" stroke-linecap="round"/></svg>
+              Remove 2nd Avatar
+            </button>
+          </div>
         </div>
 
         <!-- Lighting panel -->
@@ -970,6 +1009,31 @@ body{
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7.5"/><path d="M6 6l8 8" stroke-linecap="round"/></svg>
               None
             </button>
+          </div>
+        </div>
+
+        <!-- FX (post-processing) panel -->
+        <div class="tpanel" id="tp-fx">
+          <div style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.4;">
+            Cinematic effects, Unity-style. These bake into your photos &amp; videos.
+          </div>
+          <div class="fx-row">
+            <div class="fx-info"><div class="fx-name">Glow / Bloom</div><div class="fx-desc">Lights up emissive materials</div></div>
+            <button class="fx-toggle" id="fx-glow" data-fx="glow"><span></span></button>
+          </div>
+          <div class="sl-row" id="fx-glow-sl"><label>Strength</label><input type="range" id="sl-glow" min="0.2" max="2.5" step="0.05" value="0.8"></div>
+          <div class="fx-row">
+            <div class="fx-info"><div class="fx-name">Chromatic Aberration</div><div class="fx-desc">RGB color-split edges</div></div>
+            <button class="fx-toggle" id="fx-ab" data-fx="aberration"><span></span></button>
+          </div>
+          <div class="sl-row" id="fx-ab-sl"><label>Amount</label><input type="range" id="sl-ab" min="0.0005" max="0.006" step="0.0002" value="0.0018"></div>
+          <div class="fx-row">
+            <div class="fx-info"><div class="fx-name">Lens Flare</div><div class="fx-desc">Soft light streak across lens</div></div>
+            <button class="fx-toggle" id="fx-flare" data-fx="flare"><span></span></button>
+          </div>
+          <div class="fx-row">
+            <div class="fx-info"><div class="fx-name">Lens Glare</div><div class="fx-desc">Vignette glow &amp; haze</div></div>
+            <button class="fx-toggle" id="fx-glare" data-fx="glare"><span></span></button>
           </div>
         </div>
 
@@ -1139,6 +1203,7 @@ body{
 
   <div id="toast"></div>
   <input type="file" id="file-input">
+  <input type="file" id="file-input-2">
 </div>
 
 <!-- VERIFIED pairing (tested in real browser): three 0.151.3 + three-vrm 1.0.10 -->
@@ -1155,10 +1220,19 @@ body{
 <script type="module">
 // ── Module imports (resolved by the import map above) ──────────────────────────
 let THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils, _libError=null;
+let EffectComposer, RenderPass, ShaderPass, UnrealBloomPass, RGBShiftShader;
 try{
   THREE = await import('three');
   ({ GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js'));
   ({ VRMLoaderPlugin, VRMUtils } = await import('@pixiv/three-vrm'));
+  // Post-processing (glow / chromatic aberration). Loaded best-effort.
+  try{
+    ({ EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js'));
+    ({ RenderPass } = await import('three/addons/postprocessing/RenderPass.js'));
+    ({ ShaderPass } = await import('three/addons/postprocessing/ShaderPass.js'));
+    ({ UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js'));
+    ({ RGBShiftShader } = await import('three/addons/shaders/RGBShiftShader.js'));
+  }catch(ppErr){ console.warn('[CARA AR] post-processing unavailable:', ppErr); }
 }catch(err){
   _libError = err;
   console.error('[CARA AR] Library load failed:', err);
@@ -1166,6 +1240,9 @@ try{
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let scene, camera, renderer;
+let composer=null, bloomPass=null, rgbPass=null, renderPass=null;
+// Effect toggles & strengths
+const FX={ glow:false, glowStrength:0.8, aberration:false, abAmount:0.0018, flare:false, glare:false };
 let ambientLight, dirLight, fillLight, rimLight;
 let currentVRM = null, neckMask = null;
 let vrmMeshes = []; // meshes with morph targets, with their morph name→index maps
@@ -1186,7 +1263,15 @@ const ANIM_EXCLUDE=new Set(['head','neck']);
 let avatarVisible = true, bgVisible = true, neckEnabled = false;
 let trayOpen = false;
 let cameraActive = false;
+let camStream = null;   // the getUserMedia stream (video + mic) for recording
 let smoothX=0,smoothY=0,smoothRX=0,smoothRY=0,smoothRZ=0;
+// ── Second avatar (optional two-face tracking) ──────────────────────────────
+let currentVRM2=null, vrmMeshes2=[], animMixer2=null, animActions2={}, currentAnimName2=null, _restPose2=null;
+let twoFaceMode=false; // true once a 2nd VRM is loaded
+// per-avatar smoothing state for avatar #2
+const S2={ smoothX:0,smoothY:0,smoothRX:0,smoothRY:0,smoothRZ:0,gazeYaw:0,gazePitch:0 };
+const liveBlendshapes2={};
+const _bsSmooth2={};
 let userRotY=Math.PI; // base avatar facing — 180° = face the viewer (confirmed on device)
 let gazeYaw=0, gazePitch=0, gazeActive=false; // eye-bone lookAt gaze (degrees)
 let userTiltX=0;       // base tilt (X rotation) offset in radians
@@ -1228,6 +1313,9 @@ function initThree(){
   renderer.setClearColor(0,0);
   renderer.outputEncoding=THREE.sRGBEncoding;
 
+  // ── Post-processing composer (glow / chromatic aberration) ────────────────
+  setupComposer(w,h);
+
   ambientLight=new THREE.AmbientLight(0xffffff,1.2); scene.add(ambientLight);
   dirLight=new THREE.DirectionalLight(0xffffff,1.0); dirLight.position.set(1,2,3); scene.add(dirLight);
   fillLight=new THREE.DirectionalLight(0xa0c4ff,0.4); fillLight.position.set(-3,0,2); scene.add(fillLight);
@@ -1237,6 +1325,7 @@ function initThree(){
     const w=innerWidth,h=innerHeight;
     camera.aspect=w/h; camera.updateProjectionMatrix();
     renderer.setSize(w,h);
+    if(composer) composer.setSize(w,h);
   });
 }
 
@@ -1404,6 +1493,36 @@ function setActiveAnimBtn(name){
     b.classList.toggle('active', b.dataset.anim===name);
   });
 }
+// Avatar #2 idle animation setup (shares the same retarget logic)
+async function setupIdleAnimations2(vrm){
+  vrm.scene.updateWorldMatrix(true,true);
+  _restPose2=[];
+  for(const vb of Object.values(MIXAMO_TO_VRM)){
+    const node=vrm.humanoid.getNormalizedBoneNode(vb);
+    if(node) _restPose2.push({node, q:node.quaternion.clone(), p:node.position.clone()});
+  }
+  animMixer2=new THREE.AnimationMixer(vrm.scene);
+  animActions2={};
+  const loader=new GLTFLoader();
+  for(const [name,b64] of Object.entries(IDLE_ANIMS)){
+    try{
+      const ab=b64ToArrayBuffer(b64);
+      const gltf=await new Promise((res,rej)=>loader.parse(ab,'',res,rej));
+      const clip=retargetClip(gltf.animations[0], gltf.scene, vrm);
+      const action=animMixer2.clipAction(clip);
+      action.clampWhenFinished=false; action.setLoop(THREE.LoopRepeat);
+      animActions2[name]=action;
+    }catch(e){ console.warn('[CARA AR] avatar2 anim load failed:',name,e); }
+  }
+}
+function playIdle2(name){
+  if(!animActions2[name]) return;
+  const next=animActions2[name];
+  if(currentAnimName2 && animActions2[currentAnimName2] && currentAnimName2!==name){
+    next.reset(); next.play(); next.crossFadeFrom(animActions2[currentAnimName2], 0.4, false);
+  }else{ next.reset(); next.play(); }
+  currentAnimName2=name;
+}
 
 async function loadVRM(file){
   document.getElementById('vrm-name').textContent='Loading…';
@@ -1508,6 +1627,76 @@ async function loadVRM(file){
   }
 }
 
+// Load a SECOND VRM into avatar slot #2 for two-face tracking.
+async function loadVRM2(file){
+  if(_libError || !GLTFLoader || !VRMLoaderPlugin){ toast('3D engine not ready'); return; }
+  const mb=(file.size/1024/1024).toFixed(0);
+  toast('Loading 2nd avatar '+file.name+' ('+mb+'MB)…',true);
+  let blobURL=null;
+  try{
+    const loader=new GLTFLoader();
+    loader.register(parser=>new VRMLoaderPlugin(parser));
+    blobURL=URL.createObjectURL(file);
+    const gltf=await new Promise((ok,fail)=>loader.load(blobURL,ok,null,fail));
+    // remove old 2nd avatar
+    if(currentVRM2){ scene.remove(currentVRM2.scene); try{VRMUtils.deepDispose(currentVRM2.scene);}catch(e){} }
+    if(animMixer2){ try{ animMixer2.stopAllAction(); }catch(e){} }
+    animMixer2=null; animActions2={}; currentAnimName2=null;
+    currentVRM2=null; vrmMeshes2=[];
+
+    const vrm=gltf.userData.vrm;
+    let modelScene;
+    if(vrm){
+      try{ VRMUtils.removeUnnecessaryVertices(vrm.scene); }catch(e){}
+      try{ VRMUtils.removeUnnecessaryJoints(vrm.scene); }catch(e){}
+      vrm.scene.traverse(o=>{o.frustumCulled=false;});
+      scene.add(vrm.scene);
+      currentVRM2={scene:vrm.scene,vrm:vrm,isVRM:true};
+      modelScene=vrm.scene;
+      try{
+        await setupIdleAnimations2(vrm);
+        if(animActions2['Breathing']){ playIdle2('Breathing'); }
+      }catch(e){ console.warn('[CARA AR] avatar2 idle setup failed',e); }
+    }else{
+      modelScene=gltf.scene||gltf.scenes[0];
+      modelScene.traverse(o=>{o.frustumCulled=false;});
+      scene.add(modelScene);
+      currentVRM2={scene:modelScene,isPlainGLTF:true};
+    }
+    // morph extraction (same numeric-remap logic)
+    modelScene.traverse(obj=>{
+      if(obj.isMesh && obj.morphTargetDictionary && Object.keys(obj.morphTargetDictionary).length>0){
+        let dict=obj.morphTargetDictionary;
+        const keys=Object.keys(dict);
+        const isNumeric=keys.every(k=>/^\d+$/.test(k));
+        const names=obj.geometry&&obj.geometry.userData&&obj.geometry.userData.targetNames;
+        if(isNumeric && names && names.length){
+          const remapped={}; for(let i=0;i<names.length;i++) remapped[names[i]]=i;
+          dict=remapped; obj.morphTargetDictionary=remapped;
+        }
+        vrmMeshes2.push({mesh:obj,dict:dict,influences:obj.morphTargetInfluences});
+      }
+    });
+    twoFaceMode=true;
+    URL.revokeObjectURL(blobURL);
+    const n=file.name.replace(/\.(vrm|glb|gltf)$/i,'');
+    toast('✓ 2nd avatar '+n+' loaded — tracking 2 faces!',true);
+    document.getElementById('btn-remove-vrm2').style.display='flex';
+  }catch(e){
+    if(blobURL) URL.revokeObjectURL(blobURL);
+    console.error('[CARA AR] 2nd VRM load error:',e);
+    toast('2nd avatar failed: '+((e&&e.message)||'error'));
+  }
+}
+function removeVRM2(){
+  if(currentVRM2){ scene.remove(currentVRM2.scene); try{VRMUtils.deepDispose(currentVRM2.scene);}catch(e){} }
+  if(animMixer2){ try{ animMixer2.stopAllAction(); }catch(e){} }
+  currentVRM2=null; vrmMeshes2=[]; animMixer2=null; animActions2={}; currentAnimName2=null;
+  twoFaceMode=false;
+  document.getElementById('btn-remove-vrm2').style.display='none';
+  toast('2nd avatar removed',true);
+}
+
 // ── Apply morph targets directly on meshes ─────────────────────────────────────
 // Maps MediaPipe face landmark outputs → ARKit-compatible morph target names
 // that exist in peng_visor_vest.vrm
@@ -1519,6 +1708,23 @@ function setMorph(name, value){
       m.influences[idx]=clamped;
     }
   }
+}
+// Apply a morph to an explicit mesh list (used for avatar #2)
+function setMorphOn(meshes, name, value){
+  const clamped=Math.max(0,Math.min(1,value));
+  for(const m of meshes){
+    const idx=m.dict[name];
+    if(idx!==undefined) m.influences[idx]=clamped;
+  }
+}
+// Per-target asymmetric blendshape smoothing (separate store for avatar #2)
+function smoothBSStore(store, name, target, factor){
+  const prev=store[name]||0;
+  const rising=target>prev;
+  const f=rising?Math.min(1,factor*2.2):factor;
+  const v=prev+(target-prev)*f;
+  store[name]=v;
+  return v;
 }
 
 // ── Face tracking ──────────────────────────────────────────────────────────────
@@ -1541,7 +1747,7 @@ async function ensureMediaPipe(){
         delegate:'GPU'
       },
       runningMode:'VIDEO',
-      numFaces:1,
+      numFaces:2,
       outputFaceBlendshapes:true,           // ← the 52 ARKit coefficients
       outputFacialTransformationMatrixes:true // ← precise head pose
     });
@@ -1554,7 +1760,7 @@ async function ensureMediaPipe(){
       const fileset = await mpVision.FilesetResolver.forVisionTasks(TV+'/wasm');
       faceLandmarker = await mpVision.FaceLandmarker.createFromOptions(fileset,{
         baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'CPU'},
-        runningMode:'VIDEO',numFaces:1,outputFaceBlendshapes:true,outputFacialTransformationMatrixes:true
+        runningMode:'VIDEO',numFaces:2,outputFaceBlendshapes:true,outputFacialTransformationMatrixes:true
       });
       return true;
     }catch(e2){
@@ -1729,19 +1935,28 @@ function onFaceLandmarks(res){
     let roll = Math.atan2(R10, R11);              // about Z (tilt)
     const mir=(currentFacing==='user');
     // DAMPEN rotation: natural tilt like a native AR filter, never extreme.
-    const ROT_DAMP=0.65;                 // 65% of the real head angle (natural range)
+    const ROT_DAMP=0.62;                 // slightly less amplitude → less over-swing
     const g=ROT_DAMP*Math.min(1.4,sens);
-    const CLAMP=0.70;                      // ~40° cap so it never flips sideways
+    const CLAMP=0.68;                      // ~39° cap so it never flips sideways
     const clamp=(v)=>Math.max(-CLAMP,Math.min(CLAMP,v));
     // Yaw sign verified against real model: turning head right gives +matrix yaw;
     // for the mirrored front-camera view the avatar must turn the same way as you.
     const tYaw  = clamp((mir? -yaw : yaw) * g);
     const tPitch= clamp(pitch * g);
     const tRoll = clamp((mir? -roll : roll) * g);
-    const rotFollow=follow*0.65; // heavy smoothing → fluid, not jittery
-    smoothRY+=(tYaw  - smoothRY)*rotFollow;
-    smoothRX+=(tPitch- smoothRX)*rotFollow;
-    smoothRZ+=(tRoll - smoothRZ)*rotFollow;
+    // Adaptive follow: snap quickly toward large changes (locked-on like the
+    // tracking dots) but smooth tiny ones to kill jitter/sway when holding still.
+    const adFollow=(target,cur)=>{
+      const diff=Math.abs(target-cur);
+      const base=follow*0.55;
+      // ramp follow up to ~0.9 for big motions so it doesn't lag behind the head
+      return Math.min(0.92, base + diff*1.8);
+    };
+    // Micro-deadzone: ignore sub-degree noise so the avatar doesn't drift/sway.
+    const DZ=0.006;
+    if(Math.abs(tYaw  - smoothRY) > DZ) smoothRY+=(tYaw  - smoothRY)*adFollow(tYaw,smoothRY);
+    if(Math.abs(tPitch- smoothRX) > DZ) smoothRX+=(tPitch- smoothRX)*adFollow(tPitch,smoothRX);
+    if(Math.abs(tRoll - smoothRZ) > DZ) smoothRZ+=(tRoll - smoothRZ)*adFollow(tRoll,smoothRZ);
   }
 
   // ── 3) Head position — keep it locked & centered like a native AR filter ──
@@ -1754,11 +1969,13 @@ function onFaceLandmarks(res){
   const posGain=1.3;                 // was 2.6 — halved so it doesn't slide off
   const POS_CLAMP=0.9;               // hard cap on how far it can travel
   const clampP=(v)=>Math.max(-POS_CLAMP,Math.min(POS_CLAMP,v));
-  const posFollow=follow*0.7;
   const targetX=clampP(cx*posGain);
   const targetY=clampP(cy*posGain) + S.offsetY;
-  smoothX+=(targetX - smoothX)*posFollow;
-  smoothY+=(targetY - smoothY)*posFollow;
+  // Adaptive position follow too: tight lock on movement, calm when still.
+  const posAd=(t,c)=>Math.min(0.9, follow*0.6 + Math.abs(t-c)*2.0);
+  const PDZ=0.004;
+  if(Math.abs(targetX - smoothX) > PDZ) smoothX+=(targetX - smoothX)*posAd(targetX,smoothX);
+  if(Math.abs(targetY - smoothY) > PDZ) smoothY+=(targetY - smoothY)*posAd(targetY,smoothY);
 
   // ── 4) Eye gaze for bone-based lookAt (from blendshape look values) ───
   if(res.faceBlendshapes && res.faceBlendshapes.length){
@@ -1774,10 +1991,118 @@ function onFaceLandmarks(res){
     gazeYaw  += (gy - gazeYaw) * follow;
     gazePitch+= (gp - gazePitch) * follow;
   }
+
+  // ── Avatar #2 (two-face tracking) — driven by the 2nd detected face ──────
+  if(twoFaceMode && currentVRM2){
+    const L2 = (res.faceLandmarks && res.faceLandmarks.length>1) ? res.faceLandmarks[1] : null;
+    const BS2 = (res.faceBlendshapes && res.faceBlendshapes.length>1) ? res.faceBlendshapes[1] : null;
+    const M2 = (res.facialTransformationMatrixes && res.facialTransformationMatrixes.length>1) ? res.facialTransformationMatrixes[1] : null;
+    applyFaceToAvatar2(L2, BS2, M2, follow, sens);
+  }
+}
+
+// Applies a detected face's expression + pose to avatar #2 (mirrors avatar #1 logic).
+function applyFaceToAvatar2(L, BS, M, follow, sens){
+  if(!L){
+    S2.gazeYaw+=(0-S2.gazeYaw)*0.3; S2.gazePitch+=(0-S2.gazePitch)*0.3;
+    return;
+  }
+  const curve=(v)=>Math.pow(Math.max(0,Math.min(1,v)),0.65);
+  // Blendshapes
+  if(BS && BS.categories){
+    const cats=BS.categories;
+    for(let i=0;i<cats.length;i++){
+      const name=cats[i].categoryName;
+      if(name==='_neutral') continue;
+      const raw=cats[i].score;
+      const gain=BS_GAIN[name]||1.0;
+      const shaped=curve(raw)*gain;
+      const sv=smoothBSStore(_bsSmooth2, name, shaped, follow);
+      const applied=Math.min(1, sv*sens);
+      setMorphOn(vrmMeshes2, name, applied);
+      liveBlendshapes2[name]={raw:raw, val:applied};
+    }
+  }
+  // Cheek-puff geometric assist
+  if(L[58] && L[288] && L[33] && L[263]){
+    const eyeW=dist3(L[33],L[263])||1e-4;
+    const cheekW=dist3(L[58],L[288]);
+    const ratio=cheekW/eyeW; const baseline=1.32, span=0.16;
+    let puff=Math.max(0,Math.min(1,(ratio-baseline)/span));
+    puff=Math.min(1,Math.pow(puff,0.7)*1.3);
+    const geo=smoothBSStore(_bsSmooth2,'_cheekGeo',puff,follow);
+    const modelPuff=(liveBlendshapes2['cheekPuff']?liveBlendshapes2['cheekPuff'].val:0);
+    setMorphOn(vrmMeshes2,'cheekPuff',Math.max(modelPuff,geo));
+  }
+  // Head pose
+  if(M){
+    const m=M.data;
+    const R10=m[1],R11=m[5],R02=m[8],R12=m[9],R22=m[10];
+    let yaw=Math.atan2(R02,R22);
+    let pitch=Math.asin(Math.max(-1,Math.min(1,-R12)));
+    let roll=Math.atan2(R10,R11);
+    const mir=(currentFacing==='user');
+    const ROT_DAMP=0.62; const g=ROT_DAMP*Math.min(1.4,sens); const CLAMP=0.68;
+    const clamp=(v)=>Math.max(-CLAMP,Math.min(CLAMP,v));
+    const tYaw=clamp((mir?-yaw:yaw)*g), tPitch=clamp(pitch*g), tRoll=clamp((mir?-roll:roll)*g);
+    const adF=(t,c)=>Math.min(0.92, follow*0.55 + Math.abs(t-c)*1.8);
+    const DZ=0.006;
+    if(Math.abs(tYaw-S2.smoothRY)>DZ) S2.smoothRY+=(tYaw-S2.smoothRY)*adF(tYaw,S2.smoothRY);
+    if(Math.abs(tPitch-S2.smoothRX)>DZ) S2.smoothRX+=(tPitch-S2.smoothRX)*adF(tPitch,S2.smoothRX);
+    if(Math.abs(tRoll-S2.smoothRZ)>DZ) S2.smoothRZ+=(tRoll-S2.smoothRZ)*adF(tRoll,S2.smoothRZ);
+  }
+  // Position
+  if(L[33]&&L[263]&&L[10]&&L[152]){
+    const faceCx=(L[33].x+L[263].x)/2, faceCy=(L[10].y+L[152].y)/2;
+    const cx=(faceCx-0.5), cy=-(faceCy-0.5);
+    const posGain=1.3, POS_CLAMP=0.9;
+    const clampP=(v)=>Math.max(-POS_CLAMP,Math.min(POS_CLAMP,v));
+    const targetX=clampP(cx*posGain), targetY=clampP(cy*posGain);
+    const posAd=(t,c)=>Math.min(0.9, follow*0.6 + Math.abs(t-c)*2.0);
+    const PDZ=0.004;
+    if(Math.abs(targetX-S2.smoothX)>PDZ) S2.smoothX+=(targetX-S2.smoothX)*posAd(targetX,S2.smoothX);
+    if(Math.abs(targetY-S2.smoothY)>PDZ) S2.smoothY+=(targetY-S2.smoothY)*posAd(targetY,S2.smoothY);
+  }
+  // Eye gaze
+  if(BS && BS.categories){
+    const c={}; for(const cat of BS.categories) c[cat.categoryName]=cat.score;
+    const lookH=(c.eyeLookOutRight||0)-(c.eyeLookOutLeft||0)+(c.eyeLookInLeft||0)-(c.eyeLookInRight||0);
+    const lookV=(c.eyeLookDownLeft||0)+(c.eyeLookDownRight||0)-(c.eyeLookUpLeft||0)-(c.eyeLookUpRight||0);
+    const mir=(currentFacing==='user');
+    let gy=(lookH*0.5)*24; if(mir) gy=-gy;
+    const gp=-(lookV*0.5)*20;
+    S2.gazeYaw+=(gy-S2.gazeYaw)*follow; S2.gazePitch+=(gp-S2.gazePitch)*follow;
+  }
 }
 
 // ── Render loop ────────────────────────────────────────────────────────────────
 let _clock=null;
+function setupComposer(w,h){
+  if(!EffectComposer||!RenderPass||!ShaderPass||!UnrealBloomPass||!RGBShiftShader){ composer=null; return; }
+  try{
+    composer=new EffectComposer(renderer);
+    renderPass=new RenderPass(scene,camera);
+    composer.addPass(renderPass);
+    // Bloom (glow for emissive materials)
+    bloomPass=new UnrealBloomPass(new THREE.Vector2(w,h), 0.8, 0.5, 0.85);
+    bloomPass.enabled=false;
+    composer.addPass(bloomPass);
+    // Chromatic aberration (RGB shift)
+    rgbPass=new ShaderPass(RGBShiftShader);
+    rgbPass.uniforms['amount'].value=FX.abAmount;
+    rgbPass.enabled=false;
+    composer.addPass(rgbPass);
+    composer.setSize(w,h);
+  }catch(e){ console.warn('[CARA AR] composer setup failed',e); composer=null; }
+}
+function updateComposerEnabled(){
+  if(!composer) return;
+  if(bloomPass){ bloomPass.enabled=FX.glow; bloomPass.strength=FX.glowStrength; }
+  if(rgbPass){ rgbPass.enabled=FX.aberration; rgbPass.uniforms['amount'].value=FX.abAmount; }
+}
+// True if any GPU post-effect that requires the composer is active
+function anyComposerFX(){ return composer && (FX.glow || FX.aberration); }
+
 function loop(){
   requestAnimationFrame(loop);
   const now=performance.now();
@@ -1814,6 +2139,36 @@ function loop(){
   } else if(currentVRM){
     currentVRM.scene.visible=false;
   }
+
+  // ── Avatar #2 render (two-face mode) ──────────────────────────────────────
+  if(twoFaceMode && currentVRM2 && avatarVisible){
+    const vs2=currentVRM2.scene;
+    vs2.visible=true;
+    vs2.position.set(S2.smoothX + S.offsetX, S2.smoothY, S.depth);
+    vs2.rotation.set(S2.smoothRX + userTiltX, S2.smoothRY + userRotY, S2.smoothRZ);
+    vs2.scale.setScalar(S.scale);
+    if(animMixer2 && currentAnimName2){ try{ animMixer2.update(delta); }catch(e){} }
+    if(currentVRM2.vrm && currentVRM2.vrm.update){
+      try{ currentVRM2.vrm.update(delta); }catch(e){}
+      const la2=currentVRM2.vrm.lookAt;
+      if(la2&&la2.applier&&la2.applier.applyYawPitch){
+        if(la2.autoUpdate!==false) la2.autoUpdate=false;
+        try{ la2.applier.applyYawPitch(S2.gazeYaw, S2.gazePitch); }catch(e){}
+      }
+    }
+  } else if(currentVRM2){
+    currentVRM2.scene.visible=false;
+  }
+
+  renderScene();
+}
+
+// Render via the post-processing composer when effects are active, else direct.
+function renderScene(){
+  if(anyComposerFX()){
+    updateComposerEnabled();
+    try{ composer.render(); return; }catch(e){}
+  }
   renderer.render(scene,camera);
 }
 
@@ -1834,8 +2189,10 @@ async function startCamera(){
   const sub=document.getElementById('cam-ssub');
   try{
     const stream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:currentFacing,width:{ideal:1280},height:{ideal:720}},audio:false
+      video:{facingMode:currentFacing,width:{ideal:1920},height:{ideal:1080}},
+      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
     });
+    camStream=stream;                              // keep for recording (video+audio)
     video.srcObject=stream;
     await new Promise(r=>video.addEventListener('loadedmetadata',r,{once:true}));
     video.play();
@@ -1907,6 +2264,29 @@ function applyRingLight(){
 }
 
 // ── Photo ──────────────────────────────────────────────────────────────────────
+// Draw lens flare / glare onto a capture canvas so they appear in photos & video.
+function bakeFXOverlay(ctx,w,h){
+  if(FX.flare){
+    ctx.save(); ctx.globalCompositeOperation='screen';
+    const g1=ctx.createRadialGradient(w*0.72,h*0.28,0, w*0.72,h*0.28, Math.min(w,h)*0.22);
+    g1.addColorStop(0,'rgba(255,240,200,0.42)'); g1.addColorStop(0.4,'rgba(255,220,160,0.12)'); g1.addColorStop(1,'rgba(255,220,160,0)');
+    ctx.fillStyle=g1; ctx.fillRect(0,0,w,h);
+    const g2=ctx.createLinearGradient(0,h,w,0);
+    g2.addColorStop(0.38,'rgba(255,250,230,0)'); g2.addColorStop(0.49,'rgba(255,250,230,0.16)'); g2.addColorStop(0.60,'rgba(255,250,230,0)');
+    ctx.fillStyle=g2; ctx.fillRect(0,0,w,h);
+    ctx.restore();
+  }
+  if(FX.glare){
+    const g=ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.36, w/2,h/2,Math.max(w,h)*0.62);
+    g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.28)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+    ctx.save(); ctx.globalCompositeOperation='screen';
+    const gg=ctx.createRadialGradient(w/2,h/2,0, w/2,h/2,Math.min(w,h)*0.5);
+    gg.addColorStop(0,'rgba(255,255,255,0.10)'); gg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=gg; ctx.fillRect(0,0,w,h); ctx.restore();
+  }
+}
+
 function takePhoto(){
   const fl=document.getElementById('flash');
   fl.style.opacity='1';setTimeout(()=>fl.style.opacity='0',150);
@@ -1925,7 +2305,7 @@ function takePhoto(){
     ctx.restore();
   }
   // Render one fresh frame so the WebGL buffer is guaranteed full at read time
-  try{ renderer.render(scene,camera); }catch(e){}
+  try{ renderScene(); }catch(e){}
   ctx.drawImage(document.getElementById('three-canvas'),0,0,w,h);
   // Bake the ring-light glow into the photo if enabled
   if(ringOn){
@@ -1935,6 +2315,7 @@ function takePhoto(){
     grad.addColorStop(1,`rgba(${r},${g},${b},${(0.5*ringIntensity).toFixed(3)})`);
     ctx.fillStyle=grad; ctx.fillRect(0,0,w,h);
   }
+  bakeFXOverlay(ctx,w,h);
   const a=document.createElement('a');
   a.download='cara-ar-'+Date.now()+'.png';
   a.href=out.toDataURL('image/png');a.click();
@@ -1955,7 +2336,7 @@ function drawCompositeFrame(){
     if(mir){ recCtx.scale(-1,1); recCtx.drawImage(v,-w,0,w,h); } else { recCtx.drawImage(v,0,0,w,h); }
     recCtx.restore();
   }
-  try{ renderer.render(scene,camera); }catch(e){}
+  try{ renderScene(); }catch(e){}
   recCtx.drawImage(document.getElementById('three-canvas'),0,0,w,h);
   if(ringOn){
     const [r,g,b]=hexToRgb(ringColor);
@@ -1963,22 +2344,38 @@ function drawCompositeFrame(){
     grad.addColorStop(0,`rgba(${r},${g},${b},0)`); grad.addColorStop(1,`rgba(${r},${g},${b},${(0.5*ringIntensity).toFixed(3)})`);
     recCtx.fillStyle=grad; recCtx.fillRect(0,0,w,h);
   }
+  bakeFXOverlay(recCtx,w,h);
   recRAF=requestAnimationFrame(drawCompositeFrame);
 }
 function startRecording(){
-  const w=Math.round(window.innerWidth), h=Math.round(window.innerHeight);
+  // Record at full device resolution for crisp 9:16 / 16:9 content
+  const dpr=Math.min(window.devicePixelRatio||1, 2.5);
+  const w=Math.round(window.innerWidth*dpr), h=Math.round(window.innerHeight*dpr);
   recCanvas=document.createElement('canvas'); recCanvas.width=w; recCanvas.height=h;
   recCtx=recCanvas.getContext('2d');
   drawCompositeFrame();
   const fps=30;
   const stream=recCanvas.captureStream(fps);
+  // Mix in the microphone audio from the live camera stream
+  let hasAudio=false;
+  if(camStream){
+    const aTracks=camStream.getAudioTracks();
+    if(aTracks && aTracks.length){ aTracks.forEach(t=>stream.addTrack(t)); hasAudio=true; }
+  }
   // Pick a supported mime type (Safari prefers mp4, others webm)
   let mime='';
-  const types=['video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  const types=['video/mp4;codecs=h264,aac','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
   for(const t of types){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(t)){ mime=t; break; } }
+  // High-quality bitrates
+  const opts={ videoBitsPerSecond: 12000000, audioBitsPerSecond: 128000 };
+  if(mime) opts.mimeType=mime;
   try{
-    mediaRecorder=new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
-  }catch(e){ toast('Recording not supported on this browser',true); cleanupRec(); return; }
+    mediaRecorder=new MediaRecorder(stream, opts);
+  }catch(e){
+    try{ mediaRecorder=new MediaRecorder(stream, mime?{mimeType:mime}:undefined); }
+    catch(e2){ toast('Recording not supported on this browser',true); cleanupRec(); return; }
+  }
+  if(!hasAudio) toast('Recording (no mic access)',true);
   recChunks=[];
   mediaRecorder.ondataavailable=(e)=>{ if(e.data&&e.data.size>0) recChunks.push(e.data); };
   mediaRecorder.onstop=()=>{
@@ -2091,6 +2488,17 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     closeTray();
     await loadVRM(f);
   });
+  // Second avatar import
+  document.getElementById('btn-import-2').addEventListener('click',()=>document.getElementById('file-input-2').click());
+  document.getElementById('file-input-2').addEventListener('change',async e=>{
+    const files=e.target.files;
+    if(!files||files.length===0){ toast('No file selected for 2nd avatar'); return; }
+    const f=files[0];
+    e.target.value='';
+    closeTray();
+    await loadVRM2(f);
+  });
+  document.getElementById('btn-remove-vrm2').addEventListener('click',removeVRM2);
 
   // ── Tray ──
   document.getElementById('btn-open-tray').addEventListener('click',()=>toggleTray('tracking'));
@@ -2343,6 +2751,30 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     document.getElementById('btn-params').addEventListener('click',()=>{ panelOpen?close():open(); });
     document.getElementById('fp-close').addEventListener('click',close);
   })();
+
+  // ── FX (post-processing) tab ─────────────────────────────────────────────
+  function syncFxOverlay(){
+    const ov=document.getElementById('fx-overlay');
+    ov.classList.toggle('flare-on', FX.flare);
+    ov.classList.toggle('glare-on', FX.glare);
+  }
+  document.querySelectorAll('.fx-toggle').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const key=btn.dataset.fx;
+      FX[key]=!FX[key];
+      btn.classList.toggle('on',FX[key]);
+      if(key==='glow'||key==='aberration'){
+        if((key==='glow'||key==='aberration') && !composer){ toast('Effects not supported here',true); FX[key]=false; btn.classList.remove('on'); return; }
+        updateComposerEnabled();
+        document.getElementById('fx-glow-sl').classList.toggle('hidden', !(key==='glow'?FX.glow:document.getElementById('fx-glow').classList.contains('on')));
+      }
+      syncFxOverlay();
+    });
+  });
+  // show/hide strength sliders with their toggle
+  const glowSl=document.getElementById('sl-glow'), abSl=document.getElementById('sl-ab');
+  if(glowSl) glowSl.addEventListener('input',e=>{ FX.glowStrength=parseFloat(e.target.value); updateComposerEnabled(); });
+  if(abSl) abSl.addEventListener('input',e=>{ FX.abAmount=parseFloat(e.target.value); updateComposerEnabled(); });
 
   // ── Animations tab ───────────────────────────────────────────────────────
   document.querySelectorAll('.anim-btn').forEach(btn=>{
