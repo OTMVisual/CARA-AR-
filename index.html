@@ -290,6 +290,24 @@ body{
 }
 .shutter::after{content:'';position:absolute;inset:6px;border-radius:50%;border:2px solid rgba(0,0,0,0.15);}
 .shutter:active{transform:scale(0.88);}
+/* Recording state: white circle → red rounded square */
+.shutter.recording{background:#ff3b30;border-color:rgba(255,59,48,0.4);}
+.shutter.recording::after{inset:20px;border-radius:5px;border:none;background:#fff;}
+.shutter-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.mode-toggle{display:flex;gap:4px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:20px;padding:3px;}
+.mode-opt{
+  padding:5px 14px;border-radius:16px;font-size:11px;font-weight:700;letter-spacing:0.08em;
+  background:transparent;border:none;color:var(--muted);cursor:pointer;transition:all 0.18s;
+}
+.mode-opt.active{background:var(--grad-1);color:#04121a;}
+.rec-timer{
+  position:fixed;top:118px;left:50%;transform:translateX(-50%);z-index:60;
+  background:rgba(255,59,48,0.92);color:#fff;font-size:13px;font-weight:700;
+  padding:5px 14px;border-radius:20px;display:none;align-items:center;gap:7px;
+}
+.rec-timer.show{display:flex;}
+.rec-timer .dot{width:8px;height:8px;border-radius:50%;background:#fff;animation:recblink 1s infinite;}
+@keyframes recblink{50%{opacity:0.3;}}
 
 /* Side pill buttons */
 .side-col{display:flex;flex-direction:column;gap:8px;}
@@ -798,8 +816,14 @@ body{
           </button>
         </div>
 
-        <!-- Shutter -->
-        <button class="shutter" id="btn-shutter"></button>
+        <!-- Shutter + Photo/Video mode toggle -->
+        <div class="shutter-wrap">
+          <div class="mode-toggle" id="mode-toggle">
+            <button class="mode-opt active" data-mode="photo">PHOTO</button>
+            <button class="mode-opt" data-mode="video">VIDEO</button>
+          </div>
+          <button class="shutter" id="btn-shutter"></button>
+        </div>
 
         <!-- Right controls -->
         <div class="side-col">
@@ -1111,6 +1135,8 @@ body{
     <div class="fp-list" id="fp-list"></div>
   </div>
 
+  <div class="rec-timer" id="rec-timer"><span class="dot"></span><span id="rec-time">0:00</span></div>
+
   <div id="toast"></div>
   <input type="file" id="file-input">
 </div>
@@ -1194,7 +1220,8 @@ function initThree(){
 
   renderer=new THREE.WebGLRenderer({
     canvas:document.getElementById('three-canvas'),
-    alpha:true,antialias:true,premultipliedAlpha:false
+    alpha:true,antialias:true,premultipliedAlpha:false,
+    preserveDrawingBuffer:true   // REQUIRED so photo/video capture includes the avatar
   });
   renderer.setSize(w,h);
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -1279,37 +1306,47 @@ function b64ToArrayBuffer(b64){
 }
 // Retarget a Mixamo clip onto the loaded VRM, excluding head/neck.
 function retargetClip(srcClip, srcScene, vrm){
+  // EXACT official three-vrm retargeting (loadMixamoAnimation algorithm).
+  // Works for A-pose AND T-pose, and critically handles the VRM 0.x axis flip
+  // (VRM0 avatars face -Z, so x/z of every rotation must be negated).
   const tracks=[];
-  // Index the Mixamo source bone nodes (track names are colon-less)
-  const mixNodes={}; srcScene.traverse(o=>{ if(o.name&&o.name.indexOf('mixamorig')===0) mixNodes[o.name]=o; });
-  const vrmHips=vrm.humanoid.getNormalizedBoneNode('hips');
-  const hp=new THREE.Vector3(); if(vrmHips) vrmHips.getWorldPosition(hp);
-  const srcHips=mixNodes['mixamorigHips'];
-  const hipScale=(srcHips&&srcHips.position.y!==0)?(hp.y/srcHips.position.y):0.01;
-  for(const t of srcClip.tracks){
-    const dot=t.name.lastIndexOf('.'); if(dot<0) continue;
-    const bone=t.name.slice(0,dot), prop=t.name.slice(dot+1);
-    const vb=MIXAMO_TO_VRM[bone]; if(!vb) continue;
+  srcScene.updateWorldMatrix(true,true);
+  const getObj=(n)=>{ let f=null; srcScene.traverse(o=>{ if(o.name===n) f=o; }); return f; };
+  const restRotationInverse=new THREE.Quaternion();
+  const parentRestWorldRotation=new THREE.Quaternion();
+  const _q=new THREE.Quaternion();
+  const motHips=getObj('mixamorigHips');
+  const motionHipsHeight=motHips? motHips.position.y : 1;
+  let vrmHipsHeight=1;
+  try{ vrmHipsHeight=vrm.humanoid.normalizedRestPose.hips.position[1]; }
+  catch(e){ const h=vrm.humanoid.getNormalizedBoneNode('hips'); const v=new THREE.Vector3(); if(h){h.getWorldPosition(v); vrmHipsHeight=v.y;} }
+  const hipsPositionScale=(motionHipsHeight!==0)? vrmHipsHeight/motionHipsHeight : 0.01;
+  const isVRM0=(vrm.meta&&vrm.meta.metaVersion==='0');
+
+  for(const track of srcClip.tracks){
+    const dot=track.name.lastIndexOf('.'); if(dot<0) continue;
+    const mixName=track.name.slice(0,dot), prop=track.name.slice(dot+1);
+    const vb=MIXAMO_TO_VRM[mixName]; if(!vb) continue;
     if(ANIM_EXCLUDE.has(vb)) continue;            // head/neck → face tracking owns them
     const node=vrm.humanoid.getNormalizedBoneNode(vb); if(!node) continue;
-    const mixNode=mixNodes[bone]; if(!mixNode) continue;
+    const vrmNodeName=node.name;
+    const mixNode=getObj(mixName); if(!mixNode||!mixNode.parent) continue;
+
+    mixNode.getWorldQuaternion(restRotationInverse).invert();
+    mixNode.parent.getWorldQuaternion(parentRestWorldRotation);
+
     if(prop==='quaternion'){
-      // POSE-INDEPENDENT (A-pose & T-pose both work): apply the animation as a
-      // DELTA from the Mixamo rest onto the avatar's OWN rest pose.
-      //   delta = mixRestLocal^-1 * animLocal ;  final = vrmRestLocal * delta
-      const RmInv=mixNode.quaternion.clone().invert();
-      const Rv=node.quaternion.clone();
-      const out=new Float32Array(t.values.length);
-      const A=new THREE.Quaternion(), d=new THREE.Quaternion();
-      for(let i=0;i<t.values.length;i+=4){
-        A.set(t.values[i],t.values[i+1],t.values[i+2],t.values[i+3]);
-        d.copy(RmInv).multiply(A);
-        const f=Rv.clone().multiply(d);
-        out[i]=f.x; out[i+1]=f.y; out[i+2]=f.z; out[i+3]=f.w;
+      const values=Float32Array.from(track.values);
+      for(let i=0;i<values.length;i+=4){
+        _q.fromArray(values,i);
+        _q.premultiply(parentRestWorldRotation).multiply(restRotationInverse);
+        _q.toArray(values,i);
       }
-      tracks.push(new THREE.QuaternionKeyframeTrack(node.name+'.quaternion', t.times, out));
-    }else if(prop==='position' && vb==='hips'){
-      tracks.push(new THREE.VectorKeyframeTrack(node.name+'.position', t.times, Array.from(t.values).map(v=>v*hipScale)));
+      const finalVals=Array.from(values).map((v,i)=>(isVRM0 && i%2===0 ? -v : v));
+      tracks.push(new THREE.QuaternionKeyframeTrack(vrmNodeName+'.quaternion', track.times, finalVals));
+    }else if(prop==='position'){
+      const value=Array.from(track.values).map((v,i)=>(isVRM0 && i%3!==1 ? -v : v)*hipsPositionScale);
+      tracks.push(new THREE.VectorKeyframeTrack(vrmNodeName+'.position', track.times, value));
     }
   }
   return new THREE.AnimationClip('idle', srcClip.duration, tracks);
@@ -1887,6 +1924,8 @@ function takePhoto(){
     if(mir){ctx.scale(-1,1);ctx.drawImage(v,-w,0,w,h);}else{ctx.drawImage(v,0,0,w,h);}
     ctx.restore();
   }
+  // Render one fresh frame so the WebGL buffer is guaranteed full at read time
+  try{ renderer.render(scene,camera); }catch(e){}
   ctx.drawImage(document.getElementById('three-canvas'),0,0,w,h);
   // Bake the ring-light glow into the photo if enabled
   if(ringOn){
@@ -1900,6 +1939,84 @@ function takePhoto(){
   a.download='cara-ar-'+Date.now()+'.png';
   a.href=out.toDataURL('image/png');a.click();
   toast('Photo saved!',true);
+}
+
+// ── Video recording (composites camera + avatar, saves to device) ───────────
+let captureMode='photo';
+let mediaRecorder=null, recChunks=[], recCanvas=null, recCtx=null, recRAF=null, recStart=0, recTimerInt=null;
+function drawCompositeFrame(){
+  if(!recCtx) return;
+  const w=recCanvas.width, h=recCanvas.height;
+  const v=document.getElementById('video');
+  if(bgMode!=='camera'){ recCtx.fillStyle=BG_COLORS[bgMode]||'#000'; recCtx.fillRect(0,0,w,h); }
+  else if(v&&v.videoWidth){
+    const mir=(currentFacing==='user');
+    recCtx.save();
+    if(mir){ recCtx.scale(-1,1); recCtx.drawImage(v,-w,0,w,h); } else { recCtx.drawImage(v,0,0,w,h); }
+    recCtx.restore();
+  }
+  try{ renderer.render(scene,camera); }catch(e){}
+  recCtx.drawImage(document.getElementById('three-canvas'),0,0,w,h);
+  if(ringOn){
+    const [r,g,b]=hexToRgb(ringColor);
+    const grad=recCtx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.35,w/2,h/2,Math.max(w,h)*0.62);
+    grad.addColorStop(0,`rgba(${r},${g},${b},0)`); grad.addColorStop(1,`rgba(${r},${g},${b},${(0.5*ringIntensity).toFixed(3)})`);
+    recCtx.fillStyle=grad; recCtx.fillRect(0,0,w,h);
+  }
+  recRAF=requestAnimationFrame(drawCompositeFrame);
+}
+function startRecording(){
+  const w=Math.round(window.innerWidth), h=Math.round(window.innerHeight);
+  recCanvas=document.createElement('canvas'); recCanvas.width=w; recCanvas.height=h;
+  recCtx=recCanvas.getContext('2d');
+  drawCompositeFrame();
+  const fps=30;
+  const stream=recCanvas.captureStream(fps);
+  // Pick a supported mime type (Safari prefers mp4, others webm)
+  let mime='';
+  const types=['video/mp4;codecs=h264','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  for(const t of types){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(t)){ mime=t; break; } }
+  try{
+    mediaRecorder=new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
+  }catch(e){ toast('Recording not supported on this browser',true); cleanupRec(); return; }
+  recChunks=[];
+  mediaRecorder.ondataavailable=(e)=>{ if(e.data&&e.data.size>0) recChunks.push(e.data); };
+  mediaRecorder.onstop=()=>{
+    const blob=new Blob(recChunks,{type: mime||'video/webm'});
+    const ext=(mime.indexOf('mp4')>=0)?'mp4':'webm';
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.download='cara-ar-'+Date.now()+'.'+ext; a.href=url; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast('Video saved!',true);
+    cleanupRec();
+  };
+  mediaRecorder.start();
+  recStart=Date.now();
+  document.getElementById('btn-shutter').classList.add('recording');
+  document.getElementById('rec-timer').classList.add('show');
+  recTimerInt=setInterval(()=>{
+    const s=Math.floor((Date.now()-recStart)/1000);
+    document.getElementById('rec-time').textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+  },500);
+}
+function stopRecording(){
+  if(mediaRecorder && mediaRecorder.state!=='inactive'){ try{ mediaRecorder.stop(); }catch(e){ cleanupRec(); } }
+  else cleanupRec();
+}
+function cleanupRec(){
+  if(recRAF) cancelAnimationFrame(recRAF); recRAF=null;
+  if(recTimerInt) clearInterval(recTimerInt); recTimerInt=null;
+  recCtx=null; recCanvas=null; mediaRecorder=null;
+  document.getElementById('btn-shutter').classList.remove('recording');
+  document.getElementById('rec-timer').classList.remove('show');
+}
+function onShutter(){
+  if(captureMode==='photo'){ takePhoto(); }
+  else{
+    if(mediaRecorder && mediaRecorder.state==='recording') stopRecording();
+    else startRecording();
+  }
 }
 
 // ── Tray ───────────────────────────────────────────────────────────────────────
@@ -2067,7 +2184,14 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   });
 
   // ── Shutter ──
-  document.getElementById('btn-shutter').addEventListener('click',takePhoto);
+  document.getElementById('btn-shutter').addEventListener('click',onShutter);
+  document.querySelectorAll('.mode-opt').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      if(mediaRecorder && mediaRecorder.state==='recording') return; // don't switch mid-record
+      captureMode=btn.dataset.mode;
+      document.querySelectorAll('.mode-opt').forEach(b=>b.classList.toggle('active',b===btn));
+    });
+  });
 
   // ── Lighting presets ──
   document.querySelectorAll('.preset-card').forEach(el=>{
