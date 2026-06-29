@@ -333,6 +333,15 @@ body{
 .sl-row label{font-size:12px;color:var(--muted);width:64px;flex-shrink:0;}
 .sl-row input[type=range]{flex:1;}
 .sl-row.hidden{display:none;}
+.avatar-lock-row{display:flex;gap:8px;}
+.avatar-lock-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:11px 8px;border-radius:12px;cursor:pointer;font-size:13px;font-weight:600;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--muted);
+  transition:all 0.18s;
+}
+.avatar-lock-btn svg{width:18px;height:18px;}
+.avatar-lock-btn.active{background:rgba(0,229,160,0.12);border-color:rgba(0,229,160,0.5);color:var(--g1);}
 
 /* Side pill buttons */
 .side-col{display:flex;flex-direction:column;gap:8px;}
@@ -732,7 +741,7 @@ body{
       </div>
       <div class="splash-title cara-font"><span>CARA AR</span></div>
       <div class="splash-tagline">Wear your VRM avatar in real time. Your face drives every expression, every movement.</div>
-      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION BETA 1.1</div>
+      <div style="font-size:11px;color:#3a6a70;letter-spacing:0.18em;margin-top:4px;">VERSION BETA 1.2</div>
     </div>
 
     <div class="steps-list">
@@ -903,6 +912,19 @@ body{
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5l10 10M15 5L5 15" stroke-linecap="round"/></svg>
               Remove 2nd Avatar
             </button>
+            <div id="avatar-select-wrap" style="display:none;margin-top:12px;">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Adjusting controls for:</div>
+              <div class="avatar-lock-row">
+                <button class="avatar-lock-btn active" data-av="1">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3.2"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke-linecap="round"/></svg>
+                  Avatar 1
+                </button>
+                <button class="avatar-lock-btn" data-av="2">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3.2"/><path d="M4 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke-linecap="round"/></svg>
+                  Avatar 2
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -960,6 +982,18 @@ body{
             <div class="sl-label">Tracking Feel</div>
             <div class="sl-row"><span class="sl-name">Sensitivity</span><input type="range" id="sl-sens" min="0.3" max="2.5" step="0.05" value="1.0"><span class="sl-val" id="vl-sens">1.00</span></div>
             <div class="sl-row"><span class="sl-name">Smoothing</span><input type="range" id="sl-smooth" min="0.05" max="0.95" step="0.05" value="0.6"><span class="sl-val" id="vl-smooth">0.60</span></div>
+          </div>
+          <div class="sl-section">
+            <div class="toggle-row" style="margin-bottom:8px;">
+              <div><div class="toggle-label">Head-Only Mode</div><div class="toggle-sub">Body stays still — only head &amp; neck rotate (responsive 3-joint bridge)</div></div>
+              <button class="toggle-sw" id="tog-headonly"></button>
+            </div>
+            <div id="head-rot-sliders" style="display:none;">
+              <div class="sl-label">Head Rotation</div>
+              <div class="sl-row"><span class="sl-name">Turn (Y)</span><input type="range" id="sl-head-yaw" min="0" max="2" step="0.05" value="1.0"><span class="sl-val" id="vl-head-yaw">1.00</span></div>
+              <div class="sl-row"><span class="sl-name">Nod (X)</span><input type="range" id="sl-head-pitch" min="0" max="2" step="0.05" value="1.0"><span class="sl-val" id="vl-head-pitch">1.00</span></div>
+              <div class="sl-row"><span class="sl-name">Tilt (Z)</span><input type="range" id="sl-head-roll" min="0" max="2" step="0.05" value="1.0"><span class="sl-val" id="vl-head-roll">1.00</span></div>
+            </div>
           </div>
         </div>
 
@@ -1275,10 +1309,17 @@ const _bsSmooth2={};
 let userRotY=Math.PI; // base avatar facing — 180° = face the viewer (confirmed on device)
 let gazeYaw=0, gazePitch=0, gazeActive=false; // eye-bone lookAt gaze (degrees)
 let userTiltX=0;       // base tilt (X rotation) offset in radians
+let userRotY2=Math.PI, userTiltX2=0; // avatar #2 base rotation
 let lockPose=false;    // when true, freeze the avatar (ignore face tracking)
 let lockedState=null;  // captured pose when locking
 
 const S = { scale:1.4, offsetY:0.1, offsetX:0, depth:-0.5, sensitivity:1.0, smooth:0.6 };
+// Settings for avatar #2 (independent scale/position so each can be adjusted)
+const Sb = { scale:1.4, offsetY:0.1, offsetX:0, depth:-0.5, sensitivity:1.0, smooth:0.6 };
+// Which avatar the Offset/scale controls currently affect: 1 or 2
+let activeAvatar=1;
+// Head-only mode (static body, dynamic head, responsive neck) + head rotation gain
+const HEAD={ enabled:false, yawGain:1.0, pitchGain:1.0, rollGain:1.0 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function setLoad(pct,msg){
@@ -1682,6 +1723,7 @@ async function loadVRM2(file){
     const n=file.name.replace(/\.(vrm|glb|gltf)$/i,'');
     toast('✓ 2nd avatar '+n+' loaded — tracking 2 faces!',true);
     document.getElementById('btn-remove-vrm2').style.display='flex';
+    document.getElementById('avatar-select-wrap').style.display='block';
   }catch(e){
     if(blobURL) URL.revokeObjectURL(blobURL);
     console.error('[CARA AR] 2nd VRM load error:',e);
@@ -1694,6 +1736,9 @@ function removeVRM2(){
   currentVRM2=null; vrmMeshes2=[]; animMixer2=null; animActions2={}; currentAnimName2=null;
   twoFaceMode=false;
   document.getElementById('btn-remove-vrm2').style.display='none';
+  document.getElementById('avatar-select-wrap').style.display='none';
+  activeAvatar=1;
+  document.querySelectorAll('.avatar-lock-btn').forEach(b=>b.classList.toggle('active',b.dataset.av==='1'));
   toast('2nd avatar removed',true);
 }
 
@@ -1780,11 +1825,16 @@ async function startFaceTracking(video){
     return;
   }
   if(trackingRAF) cancelAnimationFrame(trackingRAF);
-  let lastTs=-1;
+  let lastTs=-1, lastDetect=0;
+  const DETECT_INTERVAL=1000/30;   // steady 30 Hz detection — consistent, low jitter
   const tick=()=>{
     trackingRAF=requestAnimationFrame(tick);
     if(video.readyState<2) return;
-    const ts=performance.now();
+    const now=performance.now();
+    // Throttle to a steady cadence so detection time doesn't vary frame-to-frame
+    if(now-lastDetect < DETECT_INTERVAL) return;
+    lastDetect=now;
+    const ts=now;
     if(ts===lastTs) return; lastTs=ts;
     let res;
     try{ res=faceLandmarker.detectForVideo(video,ts); }catch(e){ return; }
@@ -1837,31 +1887,40 @@ function smoothBS(name,target,factor){
 
 // ── Face-mesh preview drawing ───────────────────────────────────────────────
 let faceMeshVisible=false;
-function drawFaceMesh(landmarks){
+function drawFaceMesh(landmarks, faceList){
   const cv=document.getElementById('face-overlay');
   if(!cv) return;
   const ctx=cv.getContext('2d');
   if(cv.width!==window.innerWidth||cv.height!==window.innerHeight){cv.width=window.innerWidth;cv.height=window.innerHeight;}
   ctx.clearRect(0,0,cv.width,cv.height);
-  if(!faceMeshVisible||!landmarks) return;
+  if(!faceMeshVisible) return;
+  // Accept either a single landmark set (legacy) or a list of faces
+  let faces=faceList;
+  if(!faces){ faces = landmarks ? [landmarks] : []; }
+  if(!faces.length) return;
   const W=cv.width,H=cv.height;
   const mir=(currentFacing==='user');
   const X=(x)=> mir ? (1-x)*W : x*W;
-  // Draw a light point cloud of the landmarks
-  ctx.fillStyle='rgba(0,229,160,0.35)';
-  for(let i=0;i<landmarks.length;i+=2){
-    const p=landmarks[i]; if(!p) continue;
-    ctx.fillRect(X(p.x)-0.5,p.y*H-0.5,1.3,1.3);
-  }
+  // Distinct colors per face: face 0 = green/cyan, face 1 = magenta/orange
+  const palette=[
+    {cloud:'rgba(0,229,160,0.35)', anchor:'rgba(0,180,216,0.95)', ring:'rgba(0,229,160,0.35)'},
+    {cloud:'rgba(255,80,200,0.35)', anchor:'rgba(255,150,60,0.95)', ring:'rgba(255,80,200,0.35)'}
+  ];
   const anchors=[4,10,152,33,263,133,362,159,386,61,291,13,14,70,300,468,473];
-  ctx.fillStyle='rgba(0,180,216,0.95)';
-  for(const i of anchors){const p=landmarks[i]; if(!p) continue; ctx.beginPath(); ctx.arc(X(p.x),p.y*H,2.2,0,Math.PI*2); ctx.fill();}
-  const fore=landmarks[10],chin=landmarks[152];
-  if(fore&&chin){
-    const cx=(X(fore.x)+X(chin.x))/2, cy=(fore.y+chin.y)/2*H, r=Math.abs(chin.y-fore.y)*H*0.85;
-    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,229,160,0.35)'; ctx.lineWidth=2; ctx.setLineDash([6,6]); ctx.stroke(); ctx.setLineDash([]);
-  }
+  faces.forEach((lm,fi)=>{
+    if(!lm) return;
+    const col=palette[fi%palette.length];
+    ctx.fillStyle=col.cloud;
+    for(let i=0;i<lm.length;i+=2){ const p=lm[i]; if(!p) continue; ctx.fillRect(X(p.x)-0.5,p.y*H-0.5,1.3,1.3); }
+    ctx.fillStyle=col.anchor;
+    for(const i of anchors){const p=lm[i]; if(!p) continue; ctx.beginPath(); ctx.arc(X(p.x),p.y*H,2.2,0,Math.PI*2); ctx.fill();}
+    const fore=lm[10],chin=lm[152];
+    if(fore&&chin){
+      const cx=(X(fore.x)+X(chin.x))/2, cy=(fore.y+chin.y)/2*H, r=Math.abs(chin.y-fore.y)*H*0.85;
+      ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+      ctx.strokeStyle=col.ring; ctx.lineWidth=2; ctx.setLineDash([6,6]); ctx.stroke(); ctx.setLineDash([]);
+    }
+  });
 }
 
 // ── Main: apply 52 ARKit blendshapes directly + head pose from matrix ────────
@@ -1877,7 +1936,7 @@ function onFaceLandmarks(res){
   }
   dot.className='sdot'; txt.textContent='Tracking active';
   const L=res.faceLandmarks[0];
-  drawFaceMesh(L);
+  drawFaceMesh(null, res.faceLandmarks);  // draws all detected faces
 
   const sm=S.smooth;                 // 0..1 (higher = smoother/slower)
   const follow=1-Math.min(0.9,sm);   // per-frame follow factor
@@ -1997,7 +2056,8 @@ function onFaceLandmarks(res){
     const L2 = (res.faceLandmarks && res.faceLandmarks.length>1) ? res.faceLandmarks[1] : null;
     const BS2 = (res.faceBlendshapes && res.faceBlendshapes.length>1) ? res.faceBlendshapes[1] : null;
     const M2 = (res.facialTransformationMatrixes && res.facialTransformationMatrixes.length>1) ? res.facialTransformationMatrixes[1] : null;
-    applyFaceToAvatar2(L2, BS2, M2, follow, sens);
+    const follow2=1-Math.min(0.9,Sb.smooth);
+    applyFaceToAvatar2(L2, BS2, M2, follow2, Sb.sensitivity);
   }
 }
 
@@ -2057,7 +2117,7 @@ function applyFaceToAvatar2(L, BS, M, follow, sens){
     const cx=(faceCx-0.5), cy=-(faceCy-0.5);
     const posGain=1.3, POS_CLAMP=0.9;
     const clampP=(v)=>Math.max(-POS_CLAMP,Math.min(POS_CLAMP,v));
-    const targetX=clampP(cx*posGain), targetY=clampP(cy*posGain);
+    const targetX=clampP(cx*posGain), targetY=clampP(cy*posGain)+Sb.offsetY;
     const posAd=(t,c)=>Math.min(0.9, follow*0.6 + Math.abs(t-c)*2.0);
     const PDZ=0.004;
     if(Math.abs(targetX-S2.smoothX)>PDZ) S2.smoothX+=(targetX-S2.smoothX)*posAd(targetX,S2.smoothX);
@@ -2077,18 +2137,39 @@ function applyFaceToAvatar2(L, BS, M, follow, sens){
 
 // ── Render loop ────────────────────────────────────────────────────────────────
 let _clock=null;
+// Custom edge-only chromatic aberration (vignette style — clean, single shift).
+const EdgeAberrationShader={
+  uniforms:{ 'tDiffuse':{value:null}, 'amount':{value:0.0018} },
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+  fragmentShader:`
+    uniform sampler2D tDiffuse; uniform float amount; varying vec2 vUv;
+    void main(){
+      vec2 center=vec2(0.5);
+      vec2 dir=vUv-center;
+      float dist=length(dir);
+      // Only shift toward the edges (vignette falloff); center stays clean.
+      float falloff=smoothstep(0.18,0.75,dist);
+      vec2 offset=dir*amount*falloff*8.0;
+      float r=texture2D(tDiffuse, vUv-offset).r;
+      float g=texture2D(tDiffuse, vUv).g;
+      float b=texture2D(tDiffuse, vUv+offset).b;
+      float a=texture2D(tDiffuse, vUv).a;
+      gl_FragColor=vec4(r,g,b,a);
+    }`
+};
 function setupComposer(w,h){
-  if(!EffectComposer||!RenderPass||!ShaderPass||!UnrealBloomPass||!RGBShiftShader){ composer=null; return; }
+  if(!EffectComposer||!RenderPass||!ShaderPass||!UnrealBloomPass){ composer=null; return; }
   try{
     composer=new EffectComposer(renderer);
     renderPass=new RenderPass(scene,camera);
     composer.addPass(renderPass);
-    // Bloom (glow for emissive materials)
-    bloomPass=new UnrealBloomPass(new THREE.Vector2(w,h), 0.8, 0.5, 0.85);
+    // Bloom — HIGH threshold so only genuinely bright / emissive pixels glow,
+    // not the whole character. (threshold 0.9, tight radius)
+    bloomPass=new UnrealBloomPass(new THREE.Vector2(w,h), 0.6, 0.35, 0.9);
     bloomPass.enabled=false;
     composer.addPass(bloomPass);
-    // Chromatic aberration (RGB shift)
-    rgbPass=new ShaderPass(RGBShiftShader);
+    // Edge-only chromatic aberration (custom shader — no double ripple)
+    rgbPass=new ShaderPass(EdgeAberrationShader);
     rgbPass.uniforms['amount'].value=FX.abAmount;
     rgbPass.enabled=false;
     composer.addPass(rgbPass);
@@ -2097,7 +2178,7 @@ function setupComposer(w,h){
 }
 function updateComposerEnabled(){
   if(!composer) return;
-  if(bloomPass){ bloomPass.enabled=FX.glow; bloomPass.strength=FX.glowStrength; }
+  if(bloomPass){ bloomPass.enabled=FX.glow; bloomPass.strength=FX.glowStrength; bloomPass.threshold=0.9; bloomPass.radius=0.35; }
   if(rgbPass){ rgbPass.enabled=FX.aberration; rgbPass.uniforms['amount'].value=FX.abAmount; }
 }
 // True if any GPU post-effect that requires the composer is active
@@ -2117,9 +2198,16 @@ function loop(){
       vs.scale.setScalar(lockedState.s);
     }else{
       // Live tracking + user offsets
-      vs.position.set(smoothX + S.offsetX, smoothY, S.depth);
-      vs.rotation.set(smoothRX + userTiltX, smoothRY + userRotY, smoothRZ);
-      vs.scale.setScalar(S.scale);
+      if(HEAD.enabled && currentVRM.isVRM){
+        // HEAD-ONLY MODE: body stays static, only head/neck rotate.
+        vs.position.set(smoothX + S.offsetX, smoothY, S.depth);
+        vs.rotation.set(userTiltX, userRotY, 0);   // body fixed at base facing
+        vs.scale.setScalar(S.scale);
+      }else{
+        vs.position.set(smoothX + S.offsetX, smoothY, S.depth);
+        vs.rotation.set(smoothRX + userTiltX, smoothRY + userRotY, smoothRZ);
+        vs.scale.setScalar(S.scale);
+      }
     }
     vs.visible=true;
     // Advance the idle body animation FIRST (it drives spine/arms/legs, not head)
@@ -2128,6 +2216,8 @@ function loop(){
     }
     if(currentVRM.isVRM&&currentVRM.vrm&&currentVRM.vrm.update){
       try{ currentVRM.vrm.update(delta); }catch(e){}
+      // HEAD-ONLY: distribute the tracked head rotation across neck + head bones.
+      if(HEAD.enabled){ applyHeadOnly(currentVRM.vrm, smoothRX, smoothRY, smoothRZ); }
       // Drive eye-bone gaze AFTER update() (update() resets it otherwise).
       const la=currentVRM.vrm.lookAt;
       if(la&&la.applier&&la.applier.applyYawPitch){
@@ -2144,9 +2234,9 @@ function loop(){
   if(twoFaceMode && currentVRM2 && avatarVisible){
     const vs2=currentVRM2.scene;
     vs2.visible=true;
-    vs2.position.set(S2.smoothX + S.offsetX, S2.smoothY, S.depth);
-    vs2.rotation.set(S2.smoothRX + userTiltX, S2.smoothRY + userRotY, S2.smoothRZ);
-    vs2.scale.setScalar(S.scale);
+    vs2.position.set(S2.smoothX + Sb.offsetX, S2.smoothY, Sb.depth);
+    vs2.rotation.set(S2.smoothRX + userTiltX2, S2.smoothRY + userRotY2, S2.smoothRZ);
+    vs2.scale.setScalar(Sb.scale);
     if(animMixer2 && currentAnimName2){ try{ animMixer2.update(delta); }catch(e){} }
     if(currentVRM2.vrm && currentVRM2.vrm.update){
       try{ currentVRM2.vrm.update(delta); }catch(e){}
@@ -2161,6 +2251,26 @@ function loop(){
   }
 
   renderScene();
+}
+
+// HEAD-ONLY: rotate just the head & neck bones (body stays still). The neck acts
+// as a "responsive bridge" taking part of the rotation so it looks natural.
+function applyHeadOnly(vrm, rx, ry, rz){
+  if(!vrm.humanoid) return;
+  const neck=vrm.humanoid.getNormalizedBoneNode('neck');
+  const head=vrm.humanoid.getNormalizedBoneNode('head');
+  const upperChest=vrm.humanoid.getNormalizedBoneNode('upperChest')||vrm.humanoid.getNormalizedBoneNode('chest');
+  const gx=rx*HEAD.pitchGain, gy=ry*HEAD.yawGain, gz=rz*HEAD.rollGain;
+  const setEuler=(node,fx,fy,fz)=>{
+    if(!node) return;
+    const e=new THREE.Euler(fx,fy,fz,'YXZ');
+    const q=new THREE.Quaternion().setFromEuler(e);
+    node.quaternion.multiply(q);
+  };
+  // chest 12%, neck 33%, head 55% — responsive bridge across 3 joints
+  if(upperChest) setEuler(upperChest, gx*0.12, gy*0.12, gz*0.12);
+  setEuler(neck, gx*0.33, gy*0.33, gz*0.33);
+  setEuler(head, gx*0.55, gy*0.55, gz*0.55);
 }
 
 // Render via the post-processing composer when effects are active, else direct.
@@ -2324,9 +2434,9 @@ function takePhoto(){
 
 // ── Video recording (composites camera + avatar, saves to device) ───────────
 let captureMode='photo';
-let mediaRecorder=null, recChunks=[], recCanvas=null, recCtx=null, recRAF=null, recStart=0, recTimerInt=null;
+let mediaRecorder=null, recChunks=[], recCanvas=null, recCtx=null, recRAF=null, recStart=0, recTimerInt=null, recDrawing=false;
 function drawCompositeFrame(){
-  if(!recCtx) return;
+  if(!recCtx || !recDrawing) return;
   const w=recCanvas.width, h=recCanvas.height;
   const v=document.getElementById('video');
   if(bgMode!=='camera'){ recCtx.fillStyle=BG_COLORS[bgMode]||'#000'; recCtx.fillRect(0,0,w,h); }
@@ -2336,7 +2446,8 @@ function drawCompositeFrame(){
     if(mir){ recCtx.scale(-1,1); recCtx.drawImage(v,-w,0,w,h); } else { recCtx.drawImage(v,0,0,w,h); }
     recCtx.restore();
   }
-  try{ renderScene(); }catch(e){}
+  // The main render loop already draws the 3D scene to three-canvas each frame
+  // (with preserveDrawingBuffer), so we just composite it — no costly re-render.
   recCtx.drawImage(document.getElementById('three-canvas'),0,0,w,h);
   if(ringOn){
     const [r,g,b]=hexToRgb(ringColor);
@@ -2348,11 +2459,16 @@ function drawCompositeFrame(){
   recRAF=requestAnimationFrame(drawCompositeFrame);
 }
 function startRecording(){
-  // Record at full device resolution for crisp 9:16 / 16:9 content
-  const dpr=Math.min(window.devicePixelRatio||1, 2.5);
-  const w=Math.round(window.innerWidth*dpr), h=Math.round(window.innerHeight*dpr);
+  // Cap resolution so the composite canvas stays performant (solid fps, small files).
+  // Target ~1080p on the long edge — crisp for 9:16/16:9 without lag.
+  const baseW=window.innerWidth, baseH=window.innerHeight;
+  const longEdge=Math.max(baseW,baseH);
+  const targetLong=1920;                 // 1080p-class
+  const scale=Math.min(2, targetLong/longEdge);
+  const w=Math.round(baseW*scale), h=Math.round(baseH*scale);
   recCanvas=document.createElement('canvas'); recCanvas.width=w; recCanvas.height=h;
-  recCtx=recCanvas.getContext('2d');
+  recCtx=recCanvas.getContext('2d',{alpha:false});  // opaque ctx = faster
+  recDrawing=true;
   drawCompositeFrame();
   const fps=30;
   const stream=recCanvas.captureStream(fps);
@@ -2402,6 +2518,7 @@ function stopRecording(){
   else cleanupRec();
 }
 function cleanupRec(){
+  recDrawing=false;
   if(recRAF) cancelAnimationFrame(recRAF); recRAF=null;
   if(recTimerInt) clearInterval(recTimerInt); recTimerInt=null;
   recCtx=null; recCanvas=null; mediaRecorder=null;
@@ -2499,6 +2616,25 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     await loadVRM2(f);
   });
   document.getElementById('btn-remove-vrm2').addEventListener('click',removeVRM2);
+  // Avatar lock selector — pick which avatar the Offset sliders adjust
+  function syncOffsetSliders(){
+    const s=activeAvatar===2?Sb:S;
+    const rotY=activeAvatar===2?userRotY2:userRotY;
+    const set=(id,val,fmt)=>{const el=document.getElementById(id);if(el)el.value=val;const vl=document.getElementById(id.replace('sl-','vl-'));if(vl)vl.textContent=fmt(val);};
+    set('sl-off-h',s.offsetY,v=>(+v).toFixed(2));
+    set('sl-off-d',s.depth,v=>(+v).toFixed(2));
+    set('sl-off-x',s.offsetX,v=>(+v).toFixed(2));
+    set('sl-off-s',s.scale,v=>(+v).toFixed(2));
+    set('sl-off-a',Math.round(rotY*180/Math.PI),v=>Math.round(v)+'°');
+  }
+  document.querySelectorAll('.avatar-lock-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      activeAvatar=parseInt(btn.dataset.av);
+      document.querySelectorAll('.avatar-lock-btn').forEach(b=>b.classList.toggle('active',b===btn));
+      syncOffsetSliders();
+      toast('Now adjusting Avatar '+activeAvatar,true);
+    });
+  });
 
   // ── Tray ──
   document.getElementById('btn-open-tray').addEventListener('click',()=>toggleTray('tracking'));
@@ -2665,27 +2801,28 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   });
 
   // ── Offset tab sliders ──
+  const actS=()=>activeAvatar===2?Sb:S;
   document.getElementById('sl-off-h').addEventListener('input',e=>{
-    S.offsetY=parseFloat(e.target.value);
-    document.getElementById('vl-off-h').textContent=S.offsetY.toFixed(2);
+    actS().offsetY=parseFloat(e.target.value);
+    document.getElementById('vl-off-h').textContent=actS().offsetY.toFixed(2);
   });
   document.getElementById('sl-off-d').addEventListener('input',e=>{
-    S.depth=parseFloat(e.target.value);
-    document.getElementById('vl-off-d').textContent=S.depth.toFixed(2);
+    actS().depth=parseFloat(e.target.value);
+    document.getElementById('vl-off-d').textContent=actS().depth.toFixed(2);
   });
   document.getElementById('sl-off-x').addEventListener('input',e=>{
-    S.offsetX=parseFloat(e.target.value);
-    document.getElementById('vl-off-x').textContent=S.offsetX.toFixed(2);
+    actS().offsetX=parseFloat(e.target.value);
+    document.getElementById('vl-off-x').textContent=actS().offsetX.toFixed(2);
   });
   document.getElementById('sl-off-a').addEventListener('input',e=>{
     const deg=parseFloat(e.target.value);
-    userRotY=deg*Math.PI/180;
+    if(activeAvatar===2){ userRotY2=deg*Math.PI/180; }
+    else{ userRotY=deg*Math.PI/180; const r=document.getElementById('sl-rot'); if(r){r.value=deg;document.getElementById('vl-rot').textContent=Math.round(deg)+'°';} }
     document.getElementById('vl-off-a').textContent=Math.round(deg)+'°';
-    const r=document.getElementById('sl-rot'); if(r){r.value=deg;document.getElementById('vl-rot').textContent=Math.round(deg)+'°';}
   });
   document.getElementById('sl-off-s').addEventListener('input',e=>{
-    S.scale=parseFloat(e.target.value);
-    document.getElementById('vl-off-s').textContent=S.scale.toFixed(2);
+    actS().scale=parseFloat(e.target.value);
+    document.getElementById('vl-off-s').textContent=actS().scale.toFixed(2);
   });
   // Lock character in place
   document.getElementById('tog-lock').addEventListener('click',()=>{
@@ -2703,6 +2840,17 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
       toast('Character unlocked',true);
     }
   });
+  // Head-Only Mode toggle
+  document.getElementById('tog-headonly').addEventListener('click',()=>{
+    HEAD.enabled=!HEAD.enabled;
+    document.getElementById('tog-headonly').classList.toggle('on',HEAD.enabled);
+    document.getElementById('head-rot-sliders').style.display=HEAD.enabled?'block':'none';
+    toast(HEAD.enabled?'Head-Only mode on — body static':'Head-Only mode off',true);
+  });
+  const hookHead=(id,key)=>{const el=document.getElementById(id);if(el)el.addEventListener('input',e=>{HEAD[key]=parseFloat(e.target.value);document.getElementById(id.replace('sl-','vl-')).textContent=HEAD[key].toFixed(2);});};
+  hookHead('sl-head-yaw','yawGain');
+  hookHead('sl-head-pitch','pitchGain');
+  hookHead('sl-head-roll','rollGain');
   // Reset all offsets
   document.getElementById('btn-reset-offset').addEventListener('click',()=>{
     S.offsetY=0.1; S.depth=-0.5; S.offsetX=0; S.scale=1.4; userRotY=Math.PI; userTiltX=0;
