@@ -969,6 +969,11 @@ body{
             <div class="sl-label">Tracking Feel</div>
             <div class="sl-row"><span class="sl-name">Sensitivity</span><input type="range" id="sl-sens" min="0.3" max="2.5" step="0.05" value="1.0"><span class="sl-val" id="vl-sens">1.00</span></div>
             <div class="sl-row"><span class="sl-name">Smoothing</span><input type="range" id="sl-smooth" min="0.05" max="0.95" step="0.05" value="0.6"><span class="sl-val" id="vl-smooth">0.60</span></div>
+            <div class="sl-row"><span class="sl-name">Neck Speed</span><input type="range" id="sl-neck" min="0.3" max="2.5" step="0.05" value="1.0"><span class="sl-val" id="vl-neck">1.00</span></div>
+            <div class="toggle-row" style="margin-top:10px;">
+              <div><div class="toggle-label">Invert Up / Down</div><div class="toggle-sub">Flip if nodding down makes the avatar look up</div></div>
+              <button class="toggle-sw" id="tog-invertpitch"></button>
+            </div>
           </div>
           <div class="sl-section">
             <div class="toggle-row" style="margin-bottom:8px;">
@@ -1291,6 +1296,8 @@ let activeAvatar=1;
 // Head-only mode (static body, dynamic head, responsive neck) + head rotation gain
 const HEAD={ enabled:false, yawGain:1.0, pitchGain:1.0, rollGain:1.0 };
 let bodyLocked=false;  // Lock Body — body frozen in place, only head tracks
+let PITCH_SIGN=1;      // up/down direction; user can invert on-device if needed
+let NECK_SENS=1.0;     // neck responsiveness multiplier (higher = snappier)
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function setLoad(pct,msg){
@@ -1972,17 +1979,19 @@ function onFaceLandmarks(res){
     // Yaw sign verified against real model: turning head right gives +matrix yaw;
     // for the mirrored front-camera view the avatar must turn the same way as you.
     const tYaw  = clamp((mir? -yaw : yaw) * g);
-    // Pitch sign flipped: verified on-device that nodding DOWN was making the
-    // avatar look UP. Negating makes the avatar follow your up/down exactly.
-    const tPitch= clamp(-pitch * g);
+    // Pitch: geometry shows negative smoothRX tips the avatar's face DOWN.
+    // Looking down yields +matrix pitch, so we negate to map down→down.
+    // PITCH_SIGN lets the user flip it on-device if their convention differs.
+    const tPitch= clamp(PITCH_SIGN * pitch * g);
     const tRoll = clamp((mir? -roll : roll) * g);
     // Adaptive follow: snap quickly toward large changes (locked-on like the
     // tracking dots) but smooth tiny ones to kill jitter/sway when holding still.
     const adFollow=(target,cur)=>{
       const diff=Math.abs(target-cur);
       const base=follow*0.55;
-      // ramp follow up to ~0.9 for big motions so it doesn't lag behind the head
-      return Math.min(0.92, base + diff*1.8);
+      // ramp follow up to ~0.9 for big motions so it doesn't lag behind the head.
+      // NECK_SENS scales responsiveness: higher = snappier neck, lower = smoother/slower.
+      return Math.min(0.96, (base + diff*1.8) * NECK_SENS);
     };
     // Micro-deadzone: ignore sub-degree noise so the avatar doesn't drift/sway.
     const DZ=0.006;
@@ -2077,7 +2086,7 @@ function applyFaceToAvatar2(L, BS, M, follow, sens){
     const mir=(currentFacing==='user');
     const ROT_DAMP=0.62; const g=ROT_DAMP*Math.min(1.4,sens); const CLAMP=0.68;
     const clamp=(v)=>Math.max(-CLAMP,Math.min(CLAMP,v));
-    const tYaw=clamp((mir?-yaw:yaw)*g), tPitch=clamp(-pitch*g), tRoll=clamp((mir?-roll:roll)*g);
+    const tYaw=clamp((mir?-yaw:yaw)*g), tPitch=clamp(PITCH_SIGN*pitch*g), tRoll=clamp((mir?-roll:roll)*g);
     const adF=(t,c)=>Math.min(0.92, follow*0.55 + Math.abs(t-c)*1.8);
     const DZ=0.006;
     if(Math.abs(tYaw-S2.smoothRY)>DZ) S2.smoothRY+=(tYaw-S2.smoothRY)*adF(tYaw,S2.smoothRY);
@@ -2598,8 +2607,11 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   }
   document.querySelectorAll('.avatar-lock-btn').forEach(btn=>{
     btn.addEventListener('click',()=>{
-      activeAvatar=parseInt(btn.dataset.av);
-      document.querySelectorAll('.avatar-lock-btn').forEach(b=>b.classList.toggle('active',b===btn));
+      activeAvatar=parseInt(btn.dataset.av,10);
+      // Update highlight by matching data-av (robust against reference issues)
+      document.querySelectorAll('.avatar-lock-btn').forEach(b=>{
+        b.classList.toggle('active', parseInt(b.dataset.av,10)===activeAvatar);
+      });
       syncOffsetSliders();
       toast('Now adjusting Avatar '+activeAvatar,true);
     });
@@ -2829,6 +2841,19 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
   hookHead('sl-head-yaw','yawGain');
   hookHead('sl-head-pitch','pitchGain');
   hookHead('sl-head-roll','rollGain');
+  // Neck Speed — how fast the head/neck follows your movements
+  const neckSl=document.getElementById('sl-neck');
+  if(neckSl) neckSl.addEventListener('input',e=>{
+    NECK_SENS=parseFloat(e.target.value);
+    document.getElementById('vl-neck').textContent=NECK_SENS.toFixed(2);
+  });
+  // Invert Up/Down — flip the pitch direction if it tracks backwards
+  const invBtn=document.getElementById('tog-invertpitch');
+  if(invBtn) invBtn.addEventListener('click',()=>{
+    PITCH_SIGN=-PITCH_SIGN;
+    invBtn.classList.toggle('on', PITCH_SIGN>0);
+    toast(PITCH_SIGN>0?'Up/Down inverted':'Up/Down normal',true);
+  });
   // Reset Head & Neck — re-center the head and restore neutral gains
   const headResetBtn=document.getElementById('btn-head-reset');
   if(headResetBtn) headResetBtn.addEventListener('click',()=>{
@@ -2926,11 +2951,13 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     const pxToSceneX=(dx)=> (dx/window.innerWidth)*4.2;
     const pxToSceneY=(dy)=> -(dy/window.innerHeight)*4.2*(window.innerHeight/window.innerWidth);
 
+    const gS=()=>activeAvatar===2?Sb:S;
     function syncOffsetSliders(){
-      const setV=(id,vid,val,dec=2)=>{const s=document.getElementById(id);if(s){s.value=val;document.getElementById(vid).textContent=parseFloat(val).toFixed(dec);}};
-      setV('sl-off-x','vl-off-x',S.offsetX);
-      setV('sl-off-h','vl-off-h',S.offsetY);
-      setV('sl-off-s','vl-off-s',S.scale);
+      const s=gS();
+      const setV=(id,vid,val,dec=2)=>{const el=document.getElementById(id);if(el){el.value=val;document.getElementById(vid).textContent=parseFloat(val).toFixed(dec);}};
+      setV('sl-off-x','vl-off-x',s.offsetX);
+      setV('sl-off-h','vl-off-h',s.offsetY);
+      setV('sl-off-s','vl-off-s',s.scale);
     }
 
     zone.addEventListener('touchstart',e=>{
@@ -2938,11 +2965,11 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
       if(e.touches.length===1){
         mode='drag';
         startX=e.touches[0].clientX; startY=e.touches[0].clientY;
-        baseOffX=S.offsetX; baseOffY=S.offsetY;
+        baseOffX=gS().offsetX; baseOffY=gS().offsetY;
       }else if(e.touches.length===2){
         mode='pinch';
         startDist=dist(e.touches[0],e.touches[1]);
-        baseScale=S.scale;
+        baseScale=gS().scale;
       }
     },{passive:true});
 
@@ -2951,15 +2978,15 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
       if(mode==='drag'&&e.touches.length===1){
         const dx=e.touches[0].clientX-startX;
         const dy=e.touches[0].clientY-startY;
-        S.offsetX=baseOffX+pxToSceneX(dx);
-        S.offsetY=baseOffY+pxToSceneY(dy);
-        showHint('Move  X '+S.offsetX.toFixed(2)+'   Y '+S.offsetY.toFixed(2));
+        gS().offsetX=baseOffX+pxToSceneX(dx);
+        gS().offsetY=baseOffY+pxToSceneY(dy);
+        showHint('Move  X '+gS().offsetX.toFixed(2)+'   Y '+gS().offsetY.toFixed(2));
         syncOffsetSliders();
       }else if(mode==='pinch'&&e.touches.length===2){
         const d=dist(e.touches[0],e.touches[1]);
         const ratio=d/(startDist||d);
-        S.scale=Math.min(3.5,Math.max(0.3,baseScale*ratio));
-        showHint('Scale  '+S.scale.toFixed(2)+'×');
+        gS().scale=Math.min(3.5,Math.max(0.3,baseScale*ratio));
+        showHint('Scale  '+gS().scale.toFixed(2)+'×');
         syncOffsetSliders();
       }
     },{passive:true});
@@ -2969,23 +2996,23 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
       else if(e.touches.length===1){ // dropped from pinch to drag
         mode='drag';
         startX=e.touches[0].clientX; startY=e.touches[0].clientY;
-        baseOffX=S.offsetX; baseOffY=S.offsetY;
+        baseOffX=gS().offsetX; baseOffY=gS().offsetY;
       }
     },{passive:true});
 
     // Desktop: drag with mouse to move, wheel to scale (for testing)
     let mDown=false;
-    zone.addEventListener('mousedown',e=>{if(!currentVRM)return;mDown=true;startX=e.clientX;startY=e.clientY;baseOffX=S.offsetX;baseOffY=S.offsetY;});
+    zone.addEventListener('mousedown',e=>{if(!currentVRM)return;mDown=true;startX=e.clientX;startY=e.clientY;baseOffX=gS().offsetX;baseOffY=gS().offsetY;});
     window.addEventListener('mousemove',e=>{
       if(!mDown||!currentVRM)return;
-      S.offsetX=baseOffX+pxToSceneX(e.clientX-startX);
-      S.offsetY=baseOffY+pxToSceneY(e.clientY-startY);
+      gS().offsetX=baseOffX+pxToSceneX(e.clientX-startX);
+      gS().offsetY=baseOffY+pxToSceneY(e.clientY-startY);
       syncOffsetSliders();
     });
     window.addEventListener('mouseup',()=>{mDown=false;});
     zone.addEventListener('wheel',e=>{
       if(!currentVRM)return; e.preventDefault();
-      S.scale=Math.min(3.5,Math.max(0.3,S.scale*(e.deltaY<0?1.05:0.95)));
+      gS().scale=Math.min(3.5,Math.max(0.3,gS().scale*(e.deltaY<0?1.05:0.95)));
       syncOffsetSliders();
     },{passive:false});
   })();
