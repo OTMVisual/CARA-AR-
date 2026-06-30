@@ -990,9 +990,13 @@ body{
             </div>
             <div id="head-rot-sliders" style="display:none;">
               <div class="sl-label">Head Rotation</div>
-              <div class="sl-row"><span class="sl-name">Turn (Y)</span><input type="range" id="sl-head-yaw" min="0" max="2" step="0.05" value="1.0"><span class="sl-val" id="vl-head-yaw">1.00</span></div>
-              <div class="sl-row"><span class="sl-name">Nod (X)</span><input type="range" id="sl-head-pitch" min="0" max="2" step="0.05" value="1.0"><span class="sl-val" id="vl-head-pitch">1.00</span></div>
-              <div class="sl-row"><span class="sl-name">Tilt (Z)</span><input type="range" id="sl-head-roll" min="0" max="2" step="0.05" value="1.0"><span class="sl-val" id="vl-head-roll">1.00</span></div>
+              <div class="sl-row"><span class="sl-name">Turn (Y)</span><input type="range" id="sl-head-yaw" min="0" max="1.5" step="0.05" value="1.0"><span class="sl-val" id="vl-head-yaw">1.00</span></div>
+              <div class="sl-row"><span class="sl-name">Nod (X)</span><input type="range" id="sl-head-pitch" min="0" max="1.5" step="0.05" value="1.0"><span class="sl-val" id="vl-head-pitch">1.00</span></div>
+              <div class="sl-row"><span class="sl-name">Tilt (Z)</span><input type="range" id="sl-head-roll" min="0" max="1.5" step="0.05" value="1.0"><span class="sl-val" id="vl-head-roll">1.00</span></div>
+              <button class="btn-secondary" id="btn-head-reset" style="margin-top:8px;">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10a6 6 0 1 1 1.8 4.2" stroke-linecap="round"/><path d="M4 14v-4h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Reset Head &amp; Neck
+              </button>
             </div>
           </div>
         </div>
@@ -1002,6 +1006,10 @@ body{
           <div class="toggle-row" style="margin-bottom:6px;">
             <div><div class="toggle-label">Lock Character in Place</div><div class="toggle-sub">Freeze position &amp; rotation (stop face tracking the avatar)</div></div>
             <button class="toggle-sw" id="tog-lock"></button>
+          </div>
+          <div class="toggle-row" style="margin-bottom:6px;">
+            <div><div class="toggle-label">Lock Body — Track Head Only</div><div class="toggle-sub">Body stays perfectly still; only the head rotates &amp; tracks you</div></div>
+            <button class="toggle-sw" id="tog-lockbody"></button>
           </div>
           <div class="sl-section">
             <div class="sl-label">Position Offset</div>
@@ -1320,6 +1328,7 @@ const Sb = { scale:1.4, offsetY:0.1, offsetX:0, depth:-0.5, sensitivity:1.0, smo
 let activeAvatar=1;
 // Head-only mode (static body, dynamic head, responsive neck) + head rotation gain
 const HEAD={ enabled:false, yawGain:1.0, pitchGain:1.0, rollGain:1.0 };
+let bodyLocked=false;  // Lock Body — body frozen in place, only head tracks
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function setLoad(pct,msg){
@@ -2198,9 +2207,14 @@ function loop(){
       vs.scale.setScalar(lockedState.s);
     }else{
       // Live tracking + user offsets
-      if(HEAD.enabled && currentVRM.isVRM){
-        // HEAD-ONLY MODE: body stays static, only head/neck rotate.
-        vs.position.set(smoothX + S.offsetX, smoothY, S.depth);
+      const headOnly=(HEAD.enabled||bodyLocked) && currentVRM.isVRM;
+      if(headOnly){
+        // HEAD-ONLY / LOCK BODY: body stays static, only head/neck rotate.
+        // When Lock Body is on, the position is frozen too (no drift) so the body
+        // is perfectly still; otherwise the body still follows your position.
+        const px = bodyLocked ? S.offsetX : (smoothX + S.offsetX);
+        const py = bodyLocked ? S.offsetY : smoothY;
+        vs.position.set(px, py, S.depth);
         vs.rotation.set(userTiltX, userRotY, 0);   // body fixed at base facing
         vs.scale.setScalar(S.scale);
       }else{
@@ -2217,7 +2231,7 @@ function loop(){
     if(currentVRM.isVRM&&currentVRM.vrm&&currentVRM.vrm.update){
       try{ currentVRM.vrm.update(delta); }catch(e){}
       // HEAD-ONLY: distribute the tracked head rotation across neck + head bones.
-      if(HEAD.enabled){ applyHeadOnly(currentVRM.vrm, smoothRX, smoothRY, smoothRZ); }
+      if(HEAD.enabled||bodyLocked){ applyHeadOnly(currentVRM.vrm, smoothRX, smoothRY, smoothRZ); }
       // Drive eye-bone gaze AFTER update() (update() resets it otherwise).
       const la=currentVRM.vrm.lookAt;
       if(la&&la.applier&&la.applier.applyYawPitch){
@@ -2259,18 +2273,23 @@ function applyHeadOnly(vrm, rx, ry, rz){
   if(!vrm.humanoid) return;
   const neck=vrm.humanoid.getNormalizedBoneNode('neck');
   const head=vrm.humanoid.getNormalizedBoneNode('head');
-  const upperChest=vrm.humanoid.getNormalizedBoneNode('upperChest')||vrm.humanoid.getNormalizedBoneNode('chest');
-  const gx=rx*HEAD.pitchGain, gy=ry*HEAD.yawGain, gz=rz*HEAD.rollGain;
+  // Apply per-axis gains, then HARD-CAP each axis so the head can never fold over,
+  // no matter how high the gain slider is. Cap ≈ 38° per axis (natural head range).
+  const CAP=0.66;
+  const cap=(v)=>Math.max(-CAP,Math.min(CAP,v));
+  const gx=cap(rx*HEAD.pitchGain), gy=cap(ry*HEAD.yawGain), gz=cap(rz*HEAD.rollGain);
   const setEuler=(node,fx,fy,fz)=>{
     if(!node) return;
     const e=new THREE.Euler(fx,fy,fz,'YXZ');
     const q=new THREE.Quaternion().setFromEuler(e);
     node.quaternion.multiply(q);
   };
-  // chest 12%, neck 33%, head 55% — responsive bridge across 3 joints
-  if(upperChest) setEuler(upperChest, gx*0.12, gy*0.12, gz*0.12);
-  setEuler(neck, gx*0.33, gy*0.33, gz*0.33);
-  setEuler(head, gx*0.55, gy*0.55, gz*0.55);
+  // ONLY neck + head rotate — the chest/torso/shoulders stay completely still
+  // so the body never moves. Neck takes 40% (the responsive bridge), head 60%.
+  // The two SUM to the full tracked angle, split across the two joints for a
+  // natural bend instead of a single stiff pivot.
+  setEuler(neck, gx*0.40, gy*0.40, gz*0.40);
+  setEuler(head, gx*0.60, gy*0.60, gz*0.60);
 }
 
 // Render via the post-processing composer when effects are active, else direct.
@@ -2847,10 +2866,34 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     document.getElementById('head-rot-sliders').style.display=HEAD.enabled?'block':'none';
     toast(HEAD.enabled?'Head-Only mode on — body static':'Head-Only mode off',true);
   });
+  // Lock Body — freeze the body, track head only
+  const togLockBody=document.getElementById('tog-lockbody');
+  if(togLockBody) togLockBody.addEventListener('click',()=>{
+    bodyLocked=!bodyLocked;
+    togLockBody.classList.toggle('on',bodyLocked);
+    // Reflect in the Head-Only toggle + show head sliders since head tracking is active
+    document.getElementById('head-rot-sliders').style.display=(bodyLocked||HEAD.enabled)?'block':'none';
+    toast(bodyLocked?'Body locked — only head tracks':'Body unlocked',true);
+  });
   const hookHead=(id,key)=>{const el=document.getElementById(id);if(el)el.addEventListener('input',e=>{HEAD[key]=parseFloat(e.target.value);document.getElementById(id.replace('sl-','vl-')).textContent=HEAD[key].toFixed(2);});};
   hookHead('sl-head-yaw','yawGain');
   hookHead('sl-head-pitch','pitchGain');
   hookHead('sl-head-roll','rollGain');
+  // Reset Head & Neck — re-center the head and restore neutral gains
+  const headResetBtn=document.getElementById('btn-head-reset');
+  if(headResetBtn) headResetBtn.addEventListener('click',()=>{
+    smoothRX=0; smoothRY=0; smoothRZ=0;
+    S2.smoothRX=0; S2.smoothRY=0; S2.smoothRZ=0;
+    HEAD.yawGain=1.0; HEAD.pitchGain=1.0; HEAD.rollGain=1.0;
+    const setS=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;const vl=document.getElementById(id.replace('sl-','vl-'));if(vl)vl.textContent=(+v).toFixed(2);};
+    setS('sl-head-yaw',1.0); setS('sl-head-pitch',1.0); setS('sl-head-roll',1.0);
+    // Snap head/neck bones back to rest immediately
+    if(currentVRM&&currentVRM.vrm&&currentVRM.vrm.humanoid){
+      const h=currentVRM.vrm.humanoid;
+      ['neck','head','upperChest','chest'].forEach(b=>{const n=h.getNormalizedBoneNode(b);if(n)n.quaternion.set(0,0,0,1);});
+    }
+    toast('Head & neck reset to center',true);
+  });
   // Reset all offsets
   document.getElementById('btn-reset-offset').addEventListener('click',()=>{
     S.offsetY=0.1; S.depth=-0.5; S.offsetX=0; S.scale=1.4; userRotY=Math.PI; userTiltX=0;
