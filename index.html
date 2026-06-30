@@ -870,7 +870,6 @@ body{
           <button class="ttab" data-tab="tracking">Track</button>
           <button class="ttab" data-tab="offset">Offset</button>
           <button class="ttab" data-tab="anim">Animate</button>
-          <button class="ttab" data-tab="fx">FX</button>
           <button class="ttab" data-tab="camera">Camera</button>
         </div>
 
@@ -1040,23 +1039,6 @@ body{
               None
             </button>
           </div>
-        </div>
-
-        <!-- FX (post-processing) panel -->
-        <div class="tpanel" id="tp-fx">
-          <div style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.4;">
-            Cinematic effects. These bake into your photos &amp; videos.
-          </div>
-          <div class="fx-row">
-            <div class="fx-info"><div class="fx-name">Glow / Bloom</div><div class="fx-desc">Soft glow on bright highlights</div></div>
-            <button class="fx-toggle" id="fx-glow" data-fx="glow"><span></span></button>
-          </div>
-          <div class="sl-row" id="fx-glow-sl"><label>Strength</label><input type="range" id="sl-glow" min="0.1" max="1.5" step="0.05" value="0.5"></div>
-          <div class="fx-row">
-            <div class="fx-info"><div class="fx-name">Chromatic Aberration</div><div class="fx-desc">Subtle RGB split at the edges</div></div>
-            <button class="fx-toggle" id="fx-ab" data-fx="aberration"><span></span></button>
-          </div>
-          <div class="sl-row" id="fx-ab-sl"><label>Amount</label><input type="range" id="sl-ab" min="0.0004" max="0.004" step="0.0002" value="0.0014"></div>
         </div>
 
         <!-- Camera panel -->
@@ -1990,7 +1972,9 @@ function onFaceLandmarks(res){
     // Yaw sign verified against real model: turning head right gives +matrix yaw;
     // for the mirrored front-camera view the avatar must turn the same way as you.
     const tYaw  = clamp((mir? -yaw : yaw) * g);
-    const tPitch= clamp(pitch * g);
+    // Pitch sign flipped: verified on-device that nodding DOWN was making the
+    // avatar look UP. Negating makes the avatar follow your up/down exactly.
+    const tPitch= clamp(-pitch * g);
     const tRoll = clamp((mir? -roll : roll) * g);
     // Adaptive follow: snap quickly toward large changes (locked-on like the
     // tracking dots) but smooth tiny ones to kill jitter/sway when holding still.
@@ -2093,7 +2077,7 @@ function applyFaceToAvatar2(L, BS, M, follow, sens){
     const mir=(currentFacing==='user');
     const ROT_DAMP=0.62; const g=ROT_DAMP*Math.min(1.4,sens); const CLAMP=0.68;
     const clamp=(v)=>Math.max(-CLAMP,Math.min(CLAMP,v));
-    const tYaw=clamp((mir?-yaw:yaw)*g), tPitch=clamp(pitch*g), tRoll=clamp((mir?-roll:roll)*g);
+    const tYaw=clamp((mir?-yaw:yaw)*g), tPitch=clamp(-pitch*g), tRoll=clamp((mir?-roll:roll)*g);
     const adF=(t,c)=>Math.min(0.92, follow*0.55 + Math.abs(t-c)*1.8);
     const DZ=0.006;
     if(Math.abs(tYaw-S2.smoothRY)>DZ) S2.smoothRY+=(tYaw-S2.smoothRY)*adF(tYaw,S2.smoothRY);
@@ -2214,7 +2198,10 @@ function loop(){
     if(currentVRM.isVRM&&currentVRM.vrm&&currentVRM.vrm.update){
       try{ currentVRM.vrm.update(delta); }catch(e){}
       // HEAD-ONLY: distribute the tracked head rotation across neck + head bones.
-      if(HEAD.enabled||bodyLocked){ applyHeadOnly(currentVRM.vrm, smoothRX, smoothRY, smoothRZ); }
+      // The avatar scene is rotated 180° (faces viewer), so the head bone's local
+      // X (nod) and Z (tilt) are inverted relative to the scene — negate them so
+      // looking down makes the avatar look DOWN (not up). Yaw (Y) is unaffected.
+      if(HEAD.enabled||bodyLocked){ applyHeadOnly(currentVRM.vrm, -smoothRX, smoothRY, -smoothRZ); }
       // Drive eye-bone gaze AFTER update() (update() resets it otherwise).
       const la=currentVRM.vrm.lookAt;
       if(la&&la.applier&&la.applier.applyYawPitch){
@@ -2905,20 +2892,6 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     document.getElementById('btn-params').addEventListener('click',()=>{ panelOpen?close():open(); });
     document.getElementById('fp-close').addEventListener('click',close);
   })();
-
-  // ── FX (post-processing) tab ─────────────────────────────────────────────
-  document.querySelectorAll('.fx-toggle').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      const key=btn.dataset.fx;
-      if(!composer){ toast('Effects not supported on this browser',true); return; }
-      FX[key]=!FX[key];
-      btn.classList.toggle('on',FX[key]);
-      updateComposerEnabled();
-    });
-  });
-  const glowSl=document.getElementById('sl-glow'), abSl=document.getElementById('sl-ab');
-  if(glowSl) glowSl.addEventListener('input',e=>{ FX.glowStrength=parseFloat(e.target.value); updateComposerEnabled(); });
-  if(abSl) abSl.addEventListener('input',e=>{ FX.abAmount=parseFloat(e.target.value); updateComposerEnabled(); });
 
   // ── Animations tab ───────────────────────────────────────────────────────
   document.querySelectorAll('.anim-btn').forEach(btn=>{
