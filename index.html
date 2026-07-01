@@ -1000,7 +1000,7 @@ body{
             <button class="toggle-sw" id="tog-lock"></button>
           </div>
           <div class="toggle-row" style="margin-bottom:6px;">
-            <div><div class="toggle-label">Lock Body — Track Head Only</div><div class="toggle-sub">Body stays perfectly still; only the head rotates &amp; tracks you</div></div>
+            <div><div class="toggle-label">Lock Body — Track Head Only</div><div class="toggle-sub">Body stays still; only the head rotates &amp; tracks. Applies to the selected avatar.</div></div>
             <button class="toggle-sw" id="tog-lockbody"></button>
           </div>
           <div class="sl-section">
@@ -1295,7 +1295,8 @@ const Sb = { scale:1.4, offsetY:0.1, offsetX:0, depth:-0.5, sensitivity:1.0, smo
 let activeAvatar=1;
 // Head-only mode (static body, dynamic head, responsive neck) + head rotation gain
 const HEAD={ enabled:false, yawGain:1.0, pitchGain:1.0, rollGain:1.0 };
-let bodyLocked=false;  // Lock Body — body frozen in place, only head tracks
+let bodyLocked=false;   // Lock Body (avatar 1) — body frozen, only head tracks
+let bodyLocked2=false;  // Lock Body (avatar 2)
 let PITCH_SIGN=1;      // up/down direction; user can invert on-device if needed
 let NECK_SENS=1.0;     // neck responsiveness multiplier (higher = snappier)
 
@@ -2227,12 +2228,21 @@ function loop(){
   if(twoFaceMode && currentVRM2 && avatarVisible){
     const vs2=currentVRM2.scene;
     vs2.visible=true;
-    vs2.position.set(S2.smoothX + Sb.offsetX, S2.smoothY + Sb.offsetY, Sb.depth);
-    vs2.rotation.set(S2.smoothRX + userTiltX2, S2.smoothRY + userRotY2, S2.smoothRZ);
-    vs2.scale.setScalar(Sb.scale);
+    const headOnly2 = bodyLocked2 && currentVRM2.isVRM;
+    if(headOnly2){
+      // LOCK BODY (avatar 2): body frozen, only head/neck rotate & track.
+      vs2.position.set(Sb.offsetX, Sb.offsetY, Sb.depth);
+      vs2.rotation.set(userTiltX2, userRotY2, 0);
+      vs2.scale.setScalar(Sb.scale);
+    }else{
+      vs2.position.set(S2.smoothX + Sb.offsetX, S2.smoothY + Sb.offsetY, Sb.depth);
+      vs2.rotation.set(S2.smoothRX + userTiltX2, S2.smoothRY + userRotY2, S2.smoothRZ);
+      vs2.scale.setScalar(Sb.scale);
+    }
     if(animMixer2 && currentAnimName2){ try{ animMixer2.update(delta); }catch(e){} }
     if(currentVRM2.vrm && currentVRM2.vrm.update){
       try{ currentVRM2.vrm.update(delta); }catch(e){}
+      if(headOnly2){ applyHeadOnly(currentVRM2.vrm, -S2.smoothRX, S2.smoothRY, -S2.smoothRZ); }
       const la2=currentVRM2.vrm.lookAt;
       if(la2&&la2.applier&&la2.applier.applyYawPitch){
         if(la2.autoUpdate!==false) la2.autoUpdate=false;
@@ -2438,11 +2448,11 @@ function drawCompositeFrame(){
 }
 function startRecording(){
   // Cap resolution so the composite canvas stays performant (solid fps, small files).
-  // Target ~1080p on the long edge — crisp for 9:16/16:9 without lag.
+  // Target ~720p-class long edge — smooth on mobile, still crisp for social video.
   const baseW=window.innerWidth, baseH=window.innerHeight;
   const longEdge=Math.max(baseW,baseH);
-  const targetLong=1920;                 // 1080p-class
-  const scale=Math.min(2, targetLong/longEdge);
+  const targetLong=1280;                 // 720p-class → smoother, less lag
+  const scale=Math.min(1.6, targetLong/longEdge);
   const w=Math.round(baseW*scale), h=Math.round(baseH*scale);
   recCanvas=document.createElement('canvas'); recCanvas.width=w; recCanvas.height=h;
   recCtx=recCanvas.getContext('2d',{alpha:false});  // opaque ctx = faster
@@ -2460,8 +2470,8 @@ function startRecording(){
   let mime='';
   const types=['video/mp4;codecs=h264,aac','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
   for(const t of types){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(t)){ mime=t; break; } }
-  // High-quality bitrates
-  const opts={ videoBitsPerSecond: 12000000, audioBitsPerSecond: 128000 };
+  // High-quality 8 Mbps video — sharp but light enough to stay smooth.
+  const opts={ videoBitsPerSecond: 8000000, audioBitsPerSecond: 128000 };
   if(mime) opts.mimeType=mime;
   try{
     mediaRecorder=new MediaRecorder(stream, opts);
@@ -2604,6 +2614,12 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     set('sl-off-x',s.offsetX,v=>(+v).toFixed(2));
     set('sl-off-s',s.scale,v=>(+v).toFixed(2));
     set('sl-off-a',Math.round(rotY*180/Math.PI),v=>Math.round(v)+'°');
+    // Reflect this avatar's Lock Body state on the toggle
+    const tlb=document.getElementById('tog-lockbody');
+    if(tlb) tlb.classList.toggle('on', activeAvatar===2?bodyLocked2:bodyLocked);
+    // Lock Character toggle is avatar-1 only; show its state
+    const tl=document.getElementById('tog-lock');
+    if(tl) tl.classList.toggle('on', activeAvatar===1 && lockPose);
   }
   document.querySelectorAll('.avatar-lock-btn').forEach(btn=>{
     btn.addEventListener('click',()=>{
@@ -2828,14 +2844,19 @@ function syncToggle(id,state){document.getElementById(id).classList.toggle('on',
     document.getElementById('head-rot-sliders').style.display=HEAD.enabled?'block':'none';
     toast(HEAD.enabled?'Head-Only mode on — body static':'Head-Only mode off',true);
   });
-  // Lock Body — freeze the body, track head only
+  // Lock Body — freeze the body, track head only (per-avatar)
   const togLockBody=document.getElementById('tog-lockbody');
   if(togLockBody) togLockBody.addEventListener('click',()=>{
-    bodyLocked=!bodyLocked;
-    togLockBody.classList.toggle('on',bodyLocked);
-    // Reflect in the Head-Only toggle + show head sliders since head tracking is active
-    document.getElementById('head-rot-sliders').style.display=(bodyLocked||HEAD.enabled)?'block':'none';
-    toast(bodyLocked?'Body locked — only head tracks':'Body unlocked',true);
+    if(activeAvatar===2){
+      bodyLocked2=!bodyLocked2;
+      togLockBody.classList.toggle('on',bodyLocked2);
+      toast(bodyLocked2?'Avatar 2 body locked — head tracks':'Avatar 2 body unlocked',true);
+    }else{
+      bodyLocked=!bodyLocked;
+      togLockBody.classList.toggle('on',bodyLocked);
+      document.getElementById('head-rot-sliders').style.display=(bodyLocked||HEAD.enabled)?'block':'none';
+      toast(bodyLocked?'Avatar 1 body locked — head tracks':'Avatar 1 body unlocked',true);
+    }
   });
   const hookHead=(id,key)=>{const el=document.getElementById(id);if(el)el.addEventListener('input',e=>{HEAD[key]=parseFloat(e.target.value);document.getElementById(id.replace('sl-','vl-')).textContent=HEAD[key].toFixed(2);});};
   hookHead('sl-head-yaw','yawGain');
