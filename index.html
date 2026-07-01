@@ -2099,7 +2099,7 @@ function applyFaceToAvatar2(L, BS, M, follow, sens){
     const cx=(faceCx-0.5), cy=-(faceCy-0.5);
     const posGain=1.3, POS_CLAMP=0.9;
     const clampP=(v)=>Math.max(-POS_CLAMP,Math.min(POS_CLAMP,v));
-    const targetX=clampP(cx*posGain), targetY=clampP(cy*posGain)+Sb.offsetY;
+    const targetX=clampP(cx*posGain), targetY=clampP(cy*posGain);
     const posAd=(t,c)=>Math.min(0.9, follow*0.6 + Math.abs(t-c)*2.0);
     const PDZ=0.004;
     if(Math.abs(targetX-S2.smoothX)>PDZ) S2.smoothX+=(targetX-S2.smoothX)*posAd(targetX,S2.smoothX);
@@ -2227,7 +2227,7 @@ function loop(){
   if(twoFaceMode && currentVRM2 && avatarVisible){
     const vs2=currentVRM2.scene;
     vs2.visible=true;
-    vs2.position.set(S2.smoothX + Sb.offsetX, S2.smoothY, Sb.depth);
+    vs2.position.set(S2.smoothX + Sb.offsetX, S2.smoothY + Sb.offsetY, Sb.depth);
     vs2.rotation.set(S2.smoothRX + userTiltX2, S2.smoothRY + userRotY2, S2.smoothRZ);
     vs2.scale.setScalar(Sb.scale);
     if(animMixer2 && currentAnimName2){ try{ animMixer2.update(delta); }catch(e){} }
